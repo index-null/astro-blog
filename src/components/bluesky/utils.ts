@@ -1,13 +1,12 @@
 import {
   AppBskyEmbedExternal,
   AppBskyEmbedImages,
-  AppBskyEmbedRecord,
   AppBskyEmbedRecordWithMedia,
   AppBskyEmbedVideo,
-  AppBskyFeedDefs,
   AtpAgent,
   RichText,
 } from "@atproto/api";
+import type { AppBskyEmbedRecord, AppBskyFeedDefs } from "@atproto/api";
 import type { Post } from "./types";
 
 const escapeMap: Record<string, string> = {

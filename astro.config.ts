@@ -40,8 +40,14 @@ export default defineConfig({
     },
     plugins: [pagefind({ outputDirectory: "dist" })],
     build: {
+      chunkSizeWarningLimit: 1024,
       rollupOptions: {
         external: [BASE + "/pagefind/pagefind.js"],
+        output: {
+          manualChunks: {
+            vendor: ["@atproto/api"],
+          },
+        },
       },
     },
   },
