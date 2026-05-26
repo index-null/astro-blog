@@ -1,0 +1,109 @@
+---
+import { GISCUS_CONFIG } from "../config.ts";
+---
+
+<div class="giscus-container mt-8 pt-8 border-t border-base-200 dark:border-base-800">
+  <div class="giscus" id="giscus-container"></div>
+</div>
+
+<script is:inline define:vars={{ config: GISCUS_CONFIG }}>
+  let themeObserver = null;
+
+  // 获取当前主题
+  function getCurrentTheme() {
+    return document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+  }
+
+  // 更新 Giscus 主题
+  function updateGiscusTheme() {
+    const iframe = document.querySelector('iframe.giscus-frame');
+    if (!iframe?.contentWindow) return;
+
+    const theme = getCurrentTheme();
+    iframe.contentWindow.postMessage(
+      { giscus: { setConfig: { theme } } },
+      'https://giscus.app'
+    );
+  }
+
+  // 加载 Giscus 脚本
+  function loadGiscus() {
+    const container = document.getElementById('giscus-container');
+    if (!container) return;
+
+    // 清除旧内容
+    container.innerHTML = '';
+
+    const script = document.createElement('script');
+    script.src = 'https://giscus.app/client.js';
+    script.setAttribute('data-repo', config.repo);
+    script.setAttribute('data-repo-id', config.repoId);
+    script.setAttribute('data-category', config.category);
+    script.setAttribute('data-category-id', config.categoryId);
+    script.setAttribute('data-mapping', config.mapping);
+    script.setAttribute('data-strict', config.strict);
+    script.setAttribute('data-reactions-enabled', config.reactionsEnabled);
+    script.setAttribute('data-emit-metadata', config.emitMetadata);
+    script.setAttribute('data-input-position', config.inputPosition);
+    // 注意：不使用 preferred_color_scheme，避免与自定义主题切换冲突
+    // 初始主题由 JavaScript 控制
+    script.setAttribute('data-theme', getCurrentTheme());
+    script.setAttribute('data-lang', config.lang);
+    script.setAttribute('data-loading', config.loading);
+    script.setAttribute('crossorigin', 'anonymous');
+    script.async = true;
+
+    container.appendChild(script);
+  }
+
+  // 设置主题监听器（使用 MutationObserver 监听 class 变化）
+  function setupThemeObserver() {
+    if (themeObserver) return;
+
+    themeObserver = new MutationObserver((mutations) => {
+      // 检查是否有 class 属性变化
+      const classChanged = mutations.some(
+        (mutation) => mutation.attributeName === 'class'
+      );
+      if (classChanged) {
+        updateGiscusTheme();
+      }
+    });
+
+    themeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['class'],
+    });
+  }
+
+  // 清理函数
+  function cleanup() {
+    if (themeObserver) {
+      themeObserver.disconnect();
+      themeObserver = null;
+    }
+  }
+
+  // 首次加载
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+      loadGiscus();
+      setupThemeObserver();
+    });
+  } else {
+    loadGiscus();
+    setupThemeObserver();
+  }
+
+  // Astro 视图过渡：页面切换时重新加载
+  document.addEventListener('astro:page-load', () => {
+    cleanup();
+    loadGiscus();
+    setupThemeObserver();
+  });
+
+  // Astro 视图过渡：页面卸载前清理
+  document.addEventListener('astro:before-swap', () => {
+    cleanup();
+  });
+</script>

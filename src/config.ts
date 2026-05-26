@@ -37,9 +37,21 @@ export const NAME = "Pykeguo";
 // 例如："保留所有权利" 或 "CC-BY-SA 4.0"
 export const LICENSE = "All rights reserved.";
 
-// Bluesky 账号标识：用于识别你的 Bluesky 账号
-// 这样可以在文章页面显示点赞和评论
-export const BLUESKY_IDENTIFIER = "flo-bit.dev";
+// Giscus 评论系统配置
+// 在 https://giscus.app/zh-CN 生成配置
+export const GISCUS_CONFIG = {
+  repo: "index-null/astro-blog",
+  repoId: "R_kgDOSnQk3w",
+  category: "Announcements",
+  categoryId: "DIC_kwDOSnQk384C93hs",
+  mapping: "url",
+  strict: "0",
+  reactionsEnabled: "1",
+  emitMetadata: "0",
+  inputPosition: "top",
+  lang: "en",
+  loading: "lazy",
+};
 
 // 源码链接：指向博客源码的 GitHub 仓库地址（不需要可留空）
 export const SOURCE_LINK = "";
@@ -71,7 +83,6 @@ export const SOCIAL_LINKS: {
   YOUTUBE_URL?: string; // YouTube 频道链接
   SUBSTACK_URL?: string; // Substack 主页链接
   EMAIL?: string; // 邮箱地址（会生成 mailto 链接）
-  BLUESKY_URL?: string; // Bluesky 主页链接
   SHOW_RSS?: boolean; // 是否显示 RSS 订阅链接
 } = {
   SHOW_RSS: true, // 显示 RSS 订阅链接
