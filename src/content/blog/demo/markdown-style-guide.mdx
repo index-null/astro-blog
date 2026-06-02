@@ -3,7 +3,7 @@ title: "Markdown Style Guide"
 shortDescription: "How to write Markdown content in Astro."
 description: "Here is a sample of some basic Markdown syntax that can be used when writing Markdown content in Astro."
 pubDate: "Jun 19 2024"
-published: true
+published: false
 tags:
   - markdown
 ---
@@ -40,15 +40,15 @@ Itatur? Quiatae cullecum rem ent aut odis in re eossequodi nonsequ idebis ne sap
 ![Alt text](./relative/path/of/image)
 ```
 
-It's recommended to put all images in the `src/assets/` directory. and use relative path to the image, eg. for `/src/assets/backgrounds/blog-placeholder-1.jpg`
+It's recommended to put all images in the `src/assets/` directory. and use relative path to the image, eg. for `/src/assets/backgrounds/blog-placeholder-1.jpg`:
 
 ```markdown
-![blog placeholder](../../assets/posts/image.jpg)
+![blog placeholder](/src/assets/posts/image.jpg)
 ```
 
 ### Output
 
-![blog placeholder](../../assets/posts/image.jpg)
+![blog placeholder](/src/assets/posts/image.jpg)
 
 ## Blockquotes
 
