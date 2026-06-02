@@ -9,6 +9,7 @@ type Props = {
 };
 
 const { total, current, tag } = Astro.props;
+const sanitizedTag = tag ? tag.split(" ").join("-") : undefined;
 
 function getVisiblePages(total: number, current: number): Array<number | null> {
   if (total < 1) {
@@ -72,8 +73,8 @@ function getVisiblePages(total: number, current: number): Array<number | null> {
       current > 1 ? (
         <a
           href={
-            tag
-              ? BASE + "/tags/" + tag + "/" + (current - 1)
+            sanitizedTag
+              ? BASE + "/tags/" + sanitizedTag + "/" + (current - 1)
               : BASE + "/pages/" + (current - 1)
           }
           aria-label="Previous page"
@@ -109,7 +110,7 @@ function getVisiblePages(total: number, current: number): Array<number | null> {
         }
 
         return (
-          <PaginationNumber tag={tag} index={page} active={current === page} />
+          <PaginationNumber tag={sanitizedTag} index={page} active={current === page} />
         );
       })
     }
@@ -120,8 +121,8 @@ function getVisiblePages(total: number, current: number): Array<number | null> {
       current < total ? (
         <a
           href={
-            tag
-              ? BASE + "/tags/" + tag + "/" + (current + 1)
+            sanitizedTag
+              ? BASE + "/tags/" + sanitizedTag + "/" + (current + 1)
               : BASE + "/pages/" + (current + 1)
           }
           aria-label="Next page"
