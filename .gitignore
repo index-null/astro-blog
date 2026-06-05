@@ -28,3 +28,5 @@ bun-debug.log*
 .idea/
 
 public/pagefind/
+
+.codebuddy

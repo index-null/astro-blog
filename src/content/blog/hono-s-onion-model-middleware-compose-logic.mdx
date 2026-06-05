@@ -1,0 +1,358 @@
+---
+# ---- REQUIRED ----
+title: "Hono's Onion Model - Middleware compose logic"
+description: ""
+pubDate: "Jun 04 2026"
+tags: []
+
+# ---- OPTIONAL ----
+published: true
+# hidden: false
+# shortDescription: ""
+# updatedDate: ""
+# heroImage: "/src/assets/posts/image.jpg"
+# hideHero: false
+# noImage: false
+# customOGImage: "/src/assets/posts/image.jpg"
+---
+
+Hono is a fast and lightweight web framework for Node.js.It's RPC-like API makes Typescript fullstack FE-BE communication more efficient with type hint.Hono's High
+Performance largely comes from its simple Middleware compose logic.
+
+I dug into Hono's Middleware compose logic and implemented a minimal onion model from scratch.
+
+# Basic usage of Hono's Middleware
+
+the processing order is as following steps, which is called "onion model":
+
+```js
+import { Hono } from "hono";
+const app = new Hono();
+// global middleware
+app.use("*", async (c, next) => {
+  console.log("step1. middiware processing request");
+  // key line
+  await next(); // [!code highlight]
+  console.log("step3. middleware processing response");
+});
+
+app.get("/", (c) => c.text("step2. context been processed")); //rounter middleware
+export default app;
+```
+
+# How this next() function works in Hono
+
+## source code
+
+You will find the key logic of `next()` in the following [code](https://github.com/honojs/hono/blob/main/src/compose.ts):
+
+Here is a simplified version of the code which stripped out the TS type definitions and the edge-case error handling:
+
+```js
+export const compose = (middleware) => {
+  return (context, next) => {
+    let index = -1;
+
+    return dispatch(0);
+
+    async function dispatch(i) {
+      if (i <= index) throw new Error("next() call multiple times");
+      index = i;
+      const fn = middleware[i] || next;
+
+      if (!fn) return context;
+      await fn(context, () => dispatch(i + 1));
+    }
+  };
+};
+```
+
+there are something maybe confusing:
+
+- recursove function `dispatch`
+- the closure variable `index`
+- when compose, there is an extra `next` parameter was passed in
+
+tbh,the extra `next` is the most intriging part.but before we delve too deeply into it,let's just try to build a simple middleware processing pipeline
+by plain promise and a little recursive function.
+
+## the scratch
+
+1. define a simple req object
+
+```js
+const req = {
+  method: "GET",
+  path: "/api/getUserInfo",
+  rsp: "", // we will use this to store the response for simple mock
+};
+```
+
+2. ignore the path, we just define two global middleware
+
+```js
+const m1_timer = async (req, next) => {
+  let start = Date.now();
+  console.log("timer start！");
+  await next();
+  let end = Date.now();
+  const duration = end - start;
+  console.log(`timer end,duration:${duration}ms`);
+};
+
+const m2_req_logger = async (req, next) => {
+  console.log(`-> ${req.method} ${req.path}`);
+  await next();
+  console.log(`<- ${JSON.stringify(req.rsp)}`);
+};
+```
+
+3. define a router,which just modify the req object to add a `name` and `age`field
+
+```js
+const router = async (req) => {
+  console.log("process req");
+  req.rsp = {
+    name: "admin",
+    age: 12,
+  };
+};
+```
+
+apparently,we all know the running order of this two middleware is `m1_timer -> m2_req_logger -> router`,and then the response will be processed by `m2_req_logger` and followed by `m1_timer` again.
+so the key is the `next()` function.we want it to call the next middleware in the order of the middleware list.
+
+that we got:
+
+```js
+const middleware_list = [m1_timer, m2_req_logger, router];
+```
+
+4. the dispatch function
+
+```js
+async function dispatch(i) {
+  const cw = middleware_list[i]; // 2. get the currentMiddleware
+  const next = () => {
+    dispatch(i + 1); // [!code highlight]
+  }; // 3. get the nextMiddleware caller
+  await cw(req, next); // 4. call the currentMiddleware
+}
+await dispatch(0); // 1. start the dispatch, the first middleware is m1_timer
+```
+
+## runtime flow
+
+1. into the middleware m1_timer
+
+```js
+const m1_timer = async (req, next) => {
+  let start = Date.now(); // 5. start the timer
+  console.log("timer start！");
+  await next(); // 6. next() is a dispatch() for the next middleware
+  let end = Date.now(); // 7. the following part will be wrapped into the promise.then(),and executed after the nextMiddleware(aka m2_req_logger) is entirely finished (aka been marked as fullfilled)
+  console.log(`timer end,duration:${duration}ms`);
+};
+/* dispatch calling, and passed next middleware caller to m2_req_logger*/
+```
+
+2. into the middleware m2_req_logger
+
+```js
+const m2_req_logger = async (req, next) => {
+  console.log(`-> ${req.method} ${req.path}`); // 8. log the request
+  await next(); // 9. this next() will call the rounter
+  console.log(`<- ${JSON.stringify(req.rsp)}`); // ditto
+};
+```
+
+3. into the router
+
+```js
+const router = async (req) => {
+  console.log("process req"); // 10. log and modify the req object
+  req.rsp = {
+    name: "admin",
+    age: 12,
+  };
+};
+```
+
+4. back to the m2_req_logger
+
+```js
+/* there is no next() in the router, actually the dispatch(3) won't be recieved by the router.*/
+/*so the promise following dispatch(2) will be resolved,which mean we return to the m2_req_logger*/
+const m2_req_logger = async (req, next) => {
+  console.log(`-> ${req.method} ${req.path}`);
+  await next();
+  console.log(`<- ${JSON.stringify(req.rsp)}`); // 11. this log line will be executed
+};
+```
+
+5. back to the m1_timer
+
+```js
+/* and ditto, after that,we return to the m1_timer*/
+const m1_timer = async (req, next) => {
+  let start = Date.now(); //
+  console.log("timer start！");
+  await next();
+  let end = Date.now(); // 12. this computation and log line will be executed
+  console.log(`timer end,duration:${duration}ms`);
+};
+```
+
+## the final result
+
+```js
+timer start！
+-> GET /api/getUserInfo
+process req
+<- {"name":"admin","age":12}
+timer end,duration:4ms
+```
+
+so finally we find out that dispatch() is next(), we pass the index number to this function, and when it is called, it will execute the relevent middleware logic.Meanwhile, the next dispatch() to call its subsequent middiware will be renamed as next() and passed to the current middiware runtime.
+
+## the closure variable `index`
+
+now let's think about a condition: what if someone call next() multiple times in the middleware logic?
+for example:
+
+```js
+const m1_timer = async (req, next) => {
+  let start = Date.now();
+  await next();
+  await next(); //call next() again! // [!code highlight]
+  let end = Date.now();
+  console.log(`timer end,duration:${duration}ms`);
+};
+```
+
+if you are familiar with how the promise works, it will be easy to understand that it's subsequent middleware will be executed again.Which means all the subsequent middlewares alog with the rounter handler will be executed twice casecadely.
+
+here is the example:
+
+```js
+const req = {
+  method: "GET",
+  path: "/api/getUserInfo",
+  rsp: "",
+};
+
+const m1 = async (req, next) => {
+  console.log("m1 before");
+  await next();
+  await next();
+  console.log("m1 after");
+};
+
+const m2 = async (req, next) => {
+  console.log("m2 before");
+  await next();
+  console.log("m2 after");
+};
+
+const m3 = async (req, next) => {
+  console.log("m3 before");
+  await next();
+  console.log("m3 after");
+};
+
+const r4 = async (req) => {
+  console.log("r4 processing request");
+  req.rsp = { name: "admin", age: 12 };
+};
+
+const middleware_list = [m1, m2, m3, r4];
+
+async function dispatch(i) {
+  const fn = middleware_list[i];
+  if (!fn) return;
+  await fn(req, () => dispatch(i + 1));
+}
+
+await dispatch(0);
+```
+
+the output is:
+
+```js
+m1 before
+m2 before
+m3 before
+r4 processing request
+m3 after
+m2 after
+m2 before // m1 call next() mutiple times, so all of the subsequent middlewares been executed again (start from the m2)// [!code highlight]
+m3 before // [!code highlight]
+r4 processing request // [!code highlight]
+m3 after // [!code highlight]
+m2 after // [!code highlight]
+m1 after // [!code highlight]
+```
+
+so we need a foolproof way to avoid this problem because any production code with this kind of bug is critical.
+
+a plain way to solve this problem is to use a tracking variable to keep the middiware index won't be called again.So we need a one-time variable to track it for each handling of incoming request.closure variable is an ideal solution.
+
+hono do this way:
+
+```js
+function compose(middleware_list) {
+  return async (req) => {
+    let index = -1; //closure variable [!code highlight]
+    await dispatch(0);
+    async function dispatch(i) {
+      //in the example above,when m2 was called the second time, the i will be 1,and
+      if (i <= index)
+        throw new Error(
+          `next() called multiple times, now the index is ${index} and i is ${i}`
+        ); // [!code highlight]
+      index = i;
+      const fn = middleware_list[i];
+      const next = () => dispatch(i + 1);
+      await fn(req, next);
+    }
+  };
+}
+
+const composed = compose(middleware_list);
+const start = async () => {
+  await composed(req);
+};
+start();
+```
+
+run the code above again, you will get the following output:
+
+```js
+m1 before
+m2 before
+m3 before
+r4 processing request
+m3 after
+m2 after
+ERROR!
+/tmp/yzODUs5eJS/main.js:39
+        if (i<=index) throw new Error(`next() called multiple times for index is ${index} and i is ${i}`);
+                            ^
+
+Error: next() called multiple times for index is 3 and i is 1 // [!code highlight]
+    at dispatch (/tmp/yzODUs5eJS/main.js:39:29)
+    at next (/tmp/yzODUs5eJS/main.js:42:28)
+    at m1 (/tmp/yzODUs5eJS/main.js:10:9)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async dispatch (/tmp/yzODUs5eJS/main.js:43:9)
+    at async /tmp/yzODUs5eJS/main.js:36:5
+    at async start (/tmp/yzODUs5eJS/main.js:51:5)
+
+Node.js v22.21.1
+```
+
+obviously, the final index stop at the rounter, but when the m2 was called the second time, the `i` is still be 1 because that dispatch(1) was passed to it.
+
+## to be continued
+
+i will continue to explain why the real hono `compose()` realization ask for an extra parameter `next` which we thought it's intriging and not necessary.
