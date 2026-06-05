@@ -1,9 +1,9 @@
 ---
 # ---- REQUIRED ----
 title: "Hono's Onion Model - Middleware compose logic"
-description: ""
+description: "Deep dive into Hono's middleware compose logic — how next() and the onion model work, and why a closure variable prevents double-invocation."
 pubDate: "Jun 04 2026"
-tags: []
+tags: ["hono", "middleware", "onion model", "compose", "next"]
 
 # ---- OPTIONAL ----
 published: true
@@ -16,13 +16,13 @@ published: true
 # customOGImage: "/src/assets/posts/image.jpg"
 ---
 
-Hono is a fast and lightweight web framework for Node.js. It's RPC-like API makes TypeScript fullstack FE-BE communication more efficient with type hint. Hono's high performance largely comes from its simple `middleware compose` logic.
+Hono is a fast and lightweight web framework for Node.js. Its RPC-like API makes TypeScript fullstack communication more efficient with type hints. Hono's high performance largely comes from its simple `middleware compose` logic.
 
 I dug into Hono's middleware compose logic and implemented a minimal `onion model` from scratch.
 
-# Basic usage of Hono's Middle·ware
+## Basic usage of Hono's Middleware
 
-The processing order is as following steps, which is called "onion model":
+The processing order follows the steps below, which is called "onion model":
 
 ```js
 import { Hono } from "hono";
@@ -39,11 +39,11 @@ app.get("/", (c) => c.text("step2. context been processed")); //router middlewar
 export default app;
 ```
 
-# How this `next()` function works in Hono
+## How this `next()` function works in Hono
 
-## Source Code
+### Source Code
 
-You will find the key logic of `next()` in the following [code](https://github.com/honojs/hono/blob/main/src/compose.ts) from Hono's github repo:
+You will find the key logic of `next()` in the following [code](https://github.com/honojs/hono/blob/main/src/compose.ts) from Hono's GitHub repo:
 
 Here is a simplified version of the code which stripped out the TS type definitions and the edge-case error handling:
 
@@ -66,17 +66,17 @@ export const compose = (middleware) => {
 };
 ```
 
-There is something maybe confusing:
+Three things in this code may be confusing:
 
 - recursive function `dispatch`
 - the `closure` variable `index`
 - when composing, there is an extra `next` parameter passed in
 
-TBH, the extra `next` is the most intriguing part. But before we delve too deeply into it, let's just try to build a simple middleware processing pipeline by plain `Promise` and a little recursive function.
+The extra `next` is the most intriguing part. But before we delve too deeply into it, let's just try to build a simple middleware processing pipeline by plain `Promise` and a little recursive function.
 
-## The Scratch
+### Building From Scratch
 
-1. define a simple `req` object
+1. Define a simple `req` object
 
 ```js
 const req = {
@@ -86,7 +86,7 @@ const req = {
 };
 ```
 
-2. ignore the path, we just define two global middleware
+2. Ignore the path, we just define two global middleware
 
 ```js
 const m1_timer = async (req, next) => {
@@ -105,7 +105,7 @@ const m2_req_logger = async (req, next) => {
 };
 ```
 
-3. define a `router`, which just modify the `req` object to add a `name` and `age` field
+3. Define a `router`, which just modify the `req` object to add a `name` and `age` field
 
 ```js
 const router = async (req) => {
@@ -117,11 +117,11 @@ const router = async (req) => {
 };
 ```
 
-Apparently, we all know the running order of these two middleware is `m1_timer -> m2_req_logger -> router`, and then the response will be processed by `m2_req_logger` and followed by `m1_timer` again.
+We all know the running order of these two middleware is `m1_timer -> m2_req_logger -> router`, and then the response will be processed by `m2_req_logger` and followed by `m1_timer` again.
 
 So the key is the `next()` function — we want it to call the next middleware in the order of the middleware list.
 
-That we got:
+This gives us:
 
 ```js
 const middleware_list = [m1_timer, m2_req_logger, router];
@@ -140,7 +140,7 @@ async function dispatch(i) {
 await dispatch(0); // 1. start the dispatch, the first middleware is m1_timer
 ```
 
-## Runtime Flow
+### Runtime Flow
 
 1. Into the middleware `m1_timer`
 
@@ -202,7 +202,7 @@ const m1_timer = async (req, next) => {
 };
 ```
 
-## The Final Result
+### The Final Result
 
 ```js
 timer start!
@@ -230,7 +230,7 @@ const m1_timer = async (req, next) => {
 };
 ```
 
-If you are familiar with how the `Promise` works, it will be easy to understand that its subsequent middleware will be executed again — which means all the subsequent middlewares along with the router handler will be executed twice `cascadingly`.
+If you are familiar with how `Promise` works, it will be easy to understand that its subsequent middleware will be executed again — which means all the subsequent middlewares along with the router handler will be executed twice `cascadingly`.
 
 Here is the example:
 
@@ -295,9 +295,9 @@ m1 after // [!code highlight]
 
 So we need a foolproof way to avoid this problem because any production code with this kind of bug is critical.
 
-A plain way to solve this problem is to use a tracking variable to keep the middleware index won't be called again. So we need a one-time variable to track it for each handling of incoming request. `Closure` variable is an ideal solution.
+A straightforward way to solve this is to use a tracking variable to ensure the middleware index won't be called again. So we need a one-time variable to track it for each handling of incoming request. A `closure` variable is an ideal solution.
 
-Hono does this way:
+Hono does it this way:
 
 ```js
 function compose(middleware_list) {
@@ -351,8 +351,8 @@ Error: next() called multiple times for index is 3 and i is 1 // [!code highligh
 Node.js v22.21.1
 ```
 
-Obviously, the final `index` stops at the `router`, but when the `m2` was called the second time, the `i` is still `1` because that `dispatch(1)` was passed to it.
+Obviously, the final `index` stops at the `router`, but when `m2` was called the second time, the `i` is still `1` because `dispatch(1)` was passed to it.
 
-## To Be Continued
+---
 
-I will continue to explain why the real Hono `compose()` realization asks for an extra parameter `next` which we thought it's intriguing and not necessary.
+I will continue to explain why the real Hono `compose()` realization asks for an extra parameter `next` which we thought was intriguing but unnecessary.
