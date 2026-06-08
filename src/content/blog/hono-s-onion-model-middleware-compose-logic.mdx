@@ -9,14 +9,14 @@ tags: ["hono", "middleware", "onion model", "compose", "next"]
 published: true
 # hidden: false
 # shortDescription: ""
-# updatedDate: ""
+updatedDate: "Jun 08 2026"
 # heroImage: "/src/assets/posts/image.jpg"
 # hideHero: false
 # noImage: false
 # customOGImage: "/src/assets/posts/image.jpg"
 ---
 
-Hono is a fast and lightweight web framework for Node.js. Its RPC-like API makes TypeScript fullstack communication more efficient with type hints. Hono's high performance largely comes from its simple `middleware compose` logic.
+[Hono](https://hono.dev) is a fast and lightweight web framework that supports multi-runtime. Its RPC-like API makes TypeScript fullstack communication more efficient with type hints. Hono's high performance largely comes from its simple `middleware compose` logic.
 
 I dug into Hono's middleware compose logic and implemented a minimal `onion model` from scratch.
 
@@ -214,7 +214,7 @@ timer end,duration:4ms
 
 So finally we find out that `dispatch()` is `next()` — we pass the index number to this function, and when it is called, it will execute the relevant middleware logic. Meanwhile, the next `dispatch()` to call its subsequent middleware will be renamed as `next()` and passed to the current middleware runtime.
 
-## The `closure` Variable `index`
+## The Closure Variable: `index`
 
 Now let's think about a condition: what if someone calls `next()` multiple times in the middleware logic?
 
@@ -353,6 +353,62 @@ Node.js v22.21.1
 
 Obviously, the final `index` stops at the `router`, but when `m2` was called the second time, the `i` is still `1` because `dispatch(1)` was passed to it.
 
----
+## Extra parameter: the `next`
 
-I will continue to explain why the real Hono `compose()` realization asks for an extra parameter `next` which we thought was intriguing but unnecessary.
+When I first looked at Hono's `compose()` function signature, I was confused by the optional `next` parameter:
+
+```typescript
+export const compose = <E extends Env = Env>(
+  middleware: [[Function, unknown], unknown][] | [[Function]][],
+  onError?: ErrorHandler<E>,
+  onNotFound?: NotFoundHandler<E>
+): ((context: Context, next?: Next) => Promise<Context>) => {
+  // ...
+};
+```
+
+My initial assumption was that this `next` parameter was used to build middleware chains in a **hierarchical way** — first composing global middleware, then passing route-specific handlers as `next` to continue execution. This would allow Hono to reuse global middleware across different route matches.
+
+**However, after diving deeper into the Hono source code, I realized this assumption was wrong.**
+
+### The truth: `next` is not used in the core flow
+
+Looking at the core request handling logic in `hono-base.ts` ([link](https://github.com/honojs/hono/blob/c78932d745cdf6284ae131a156479ac930da0262/src/hono-base.ts#L454)):
+
+```typescript
+const composed = compose(
+  matchResult[0],
+  this.errorHandler,
+  this.#notFoundHandler
+);
+const context = await composed(c); // ← No `next` parameter passed!
+```
+
+**The core `compose()` call does NOT pass any `next` parameter.**
+
+This means Hono does **not** use `next` for hierarchical middleware composition. Instead, all matched middleware and route handlers are composed into a single chain via `matchResult[0]`.
+
+### So what is the `next` parameter actually for?
+
+After more research, I found that the `next` parameter is primarily used for **sub-app mounting** (`app.route()`).
+
+When you mount a sub-app:
+
+```typescript
+const app = new Hono();
+const subApp = new Hono();
+
+subApp.get("/hello", (c) => c.text("Hello from subApp"));
+app.route("/api", subApp);
+```
+
+Hono needs a way to pass control from the parent app to the sub-app. This is where `next` comes in. The implementation can be found in `hono-base.ts` ([link](https://github.com/honojs/hono/blob/c78932d745cdf6284ae131a156479ac930da0262/src/hono-base.ts#L224)).
+
+```typescript
+handler = async (c: Context, next: Next) =>
+  (await compose([], app.errorHandler)(c, () => r.handler(c, next))).res; // [!code highlight]
+```
+
+However, understanding the sub-app mounting mechanism entirely requires knowledge of Hono's routing and path matching system, which is quite interesting and deserves its own deep dive.
+
+Don't worry if this seems confusing right now, I'll break it down step by step in upcoming posts, where cover Hono's routing mechanism and matching algorithm in depth.
