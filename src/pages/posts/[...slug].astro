@@ -61,6 +61,16 @@ if (replacedHero && !images[replacedHero])
       <h1 class="mt-4">{post.data.title}</h1>
       <Content />
 
+      {
+        post.data.updatedDate && (
+          <div class="mt-8 text-right">
+            <p class="text-sm italic text-base-500 dark:text-base-400">
+              Last updated at: <FormattedDate date={post.data.updatedDate} />
+            </p>
+          </div>
+        )
+      }
+
       <Giscus />
     </BlogPost>
   </main>
