@@ -1,0 +1,340 @@
+---
+# ---- REQUIRED ----
+title: "Vue3 Reactive From Scratch — Building Proxy-Based Reactivity by Hand"
+description: "Build Vue3's reactive() from scratch — a concise walkthrough of Proxy interception, dependency tracking (track), update dispatch (trigger), and handling Reflect and effect edge cases."
+pubDate: "Jul 09 2026"
+tags: ["vue3", "reactive", "proxy", "reactivity", "dependency tracking"]
+
+# ---- OPTIONAL ----
+published: true
+# hidden: false
+# shortDescription: ""
+# updatedDate: ""
+# heroImage: "/src/assets/posts/image.jpg"
+# hideHero: false
+# noImage: false
+# customOGImage: "/src/assets/posts/image.jpg"
+---
+
+In frontend development, reactive variables serve one simple purpose: **when data changes, the UI re-renders automatically.**
+
+This article uses Vue3's `reactive()` as an example, building it from scratch to turn plain objects into reactive ones.
+
+## A Simple Render Setup
+
+Let's start with the most basic page rendering:
+
+```html
+<body>
+  <div id="age"></div>
+  <div id="name"></div>
+  <div id="console" style="color: red"></div>
+  <script>
+    function appendToConsole(msg) {
+      document.getElementById("console").innerHTML += msg + "<br>";
+    }
+    function renderName() {
+      appendToConsole("rendering name...");
+      document.getElementById("name").innerHTML = profile.name;
+    }
+    function renderAge() {
+      appendToConsole("rendering age...");
+      document.getElementById("age").innerHTML = profile.age;
+    }
+    const profile = { age: 13, name: "John" };
+
+    renderAge();
+    renderName();
+  </script>
+</body>
+```
+
+If you later modify `profile.age = 18` and want the UI to update accordingly, you must manually call `renderAge()` again. As the number of managed objects grows and dependency relationships become more complex (e.g., a total score depending on individual subject scores), manual maintenance becomes a real headache.
+
+**We urgently need a stronger variable type: one that, when modified, automatically notifies every dependant and re-executes them.**
+
+## What Vue3's `reactive()` Looks Like
+
+Vue3 makes it dead simple:
+
+```js
+import { reactive } from "vue";
+
+// profile is now enhanced by reactive — it's a reactive object
+const profile = reactive({ age: 13, name: "John" });
+renderAge();
+
+// After this line, age on the page automatically updates to 18
+profile.age = 18; // [!code highlight]
+```
+
+Now let's try implementing `reactive()` ourselves.
+
+## Intercepting Object Reads and Writes With Proxy
+
+To notify dependants on change, we first need to intercept object mutations. `Proxy` is exactly the right tool for this.
+
+`Proxy` basic usage: `new Proxy(target, handler)`, where `handler` defines `get()` and `set()` — all reads and writes on the proxy object get intercepted.
+
+```js
+const obj = { name: "John" };
+const proxy = new Proxy(obj, {
+  get(target, key) {
+    return target[key];
+  },
+  set(target, key, value) {
+    target[key] = value;
+    return true; // indicates success
+  },
+});
+```
+
+Let's use it to spy on reads and writes to `profile`:
+
+```js
+const profile = { age: 13, name: "John" };
+const reactiveProfile = new Proxy(profile, {
+  get(target, key) {
+    appendToConsole(`read ${String(key)}, value: ${target[key]}`);
+    return target[key];
+  },
+  set(target, key, value) {
+    appendToConsole(`set ${String(key)}: ${target[key]} → ${value}`);
+    target[key] = value;
+    return true;
+  },
+});
+```
+
+Now modifying `reactiveProfile` logs the changes. But knowing _that_ a change happened isn't enough — we also need to know **who to notify**.
+
+## Who Depends on `profile`?
+
+The idea is straightforward: on every `get`, record the function currently reading the property (the dependant). For this we need:
+
+- A **global variable** `currentFunc` to track which dependency function is currently executing
+- A **wrapper** `wrapFunc` that sets `currentFunc` before executing the dependency function
+
+```js
+let currentFunc = null; // [!code highlight]
+const dependenciesMap = {}; // [!code highlight]
+
+function wrapFunc(func) {
+  return function () {
+    currentFunc = func; // mark "who I am" before execution
+    func();
+    currentFunc = null; // clear after execution
+  };
+}
+```
+
+With this infrastructure in place, we can record dependencies inside the `get` trap:
+
+```js
+get(target, key) {
+  if (currentFunc) {
+    if (!dependenciesMap[key]) {
+      dependenciesMap[key] = new Set();
+    }
+    dependenciesMap[key].add(currentFunc); // [!code highlight] record the dependency
+  }
+  return target[key];
+}
+```
+
+In the `set` trap, we just iterate over all dependants and re-execute them:
+
+```js
+set(target, key, value) {
+  target[key] = value;
+  const deps = dependenciesMap[key];
+  if (deps) {
+    deps.forEach((func) => func()); // [!code highlight] notify all dependants
+  }
+  return true;
+}
+```
+
+## The Final `reactive()` Implementation
+
+Putting it all together:
+
+```js
+let currentFunc = null;
+const dependenciesMap = {};
+
+function wrapFunc(func) {
+  return function () {
+    currentFunc = func;
+    func();
+    currentFunc = null;
+  };
+}
+
+function track(target, key) {
+  if (currentFunc) {
+    if (!dependenciesMap[key]) {
+      dependenciesMap[key] = new Set();
+    }
+    dependenciesMap[key].add(currentFunc);
+  }
+}
+
+function trigger(target, key) {
+  const deps = dependenciesMap[key];
+  if (deps) {
+    deps.forEach((func) => func());
+  }
+}
+
+function reactive(obj) {
+  return new Proxy(obj, {
+    get(target, key) {
+      track(target, key);
+      return target[key];
+    },
+    set(target, key, value) {
+      target[key] = value;
+      trigger(target, key);
+      return true;
+    },
+  });
+}
+```
+
+Rewriting the initial example with our `reactive()`:
+
+```js
+const profile = reactive({ age: 13, name: "John" });
+
+renderAge = wrapFunc(renderAge);
+renderName = wrapFunc(renderName);
+
+renderAge(); // first render — age get triggered, renderAge recorded as age's dependant
+renderName(); // same for name
+
+profile.age = 18; // age set triggered, renderAge re-executes automatically // [!code highlight]
+```
+
+Whenever `profile.age` is modified, `renderAge` automatically re-executes and the UI updates — this is the core principle behind Vue3's `reactive()`.
+
+## Aside #1: Handling `this` With Reflect
+
+Using `target[key]` directly works fine in most cases. But when the object has getters/setters or prototype chain properties, `this` may point to the raw object instead of the proxy, causing dependency tracking to be lost.
+
+Here's an example:
+
+```js
+const obj = {
+  _name: "John",
+  get name() {
+    return this._name; // who does this refer to?
+  },
+};
+
+const proxy = new Proxy(obj, {
+  get(target, key) {
+    console.log("get:", key);
+    return target[key]; // reads the raw object directly
+  },
+});
+
+console.log(proxy.name);
+```
+
+Output:
+
+```txt
+get: name
+```
+
+Notice: reading `_name` did NOT trigger the `get` trap! That's because `this` inside the getter points to `obj` (the raw object), not `proxy`. In other words, if `_name` changes, functions depending on `name` won't re-render.
+
+Replace `target[key]` with `Reflect.get(target, key, receiver)`. Since `receiver` is the proxy itself, `this` inside the getter will correctly point to the proxy object, and reads to `_name` will be intercepted too.
+
+```js
+function reactive(obj) {
+  return new Proxy(obj, {
+    get(target, key, receiver) {
+      track(target, key);
+      return Reflect.get(target, key, receiver); // [!code highlight]
+    },
+    set(target, key, value, receiver) {
+      const result = Reflect.set(target, key, value, receiver); // [!code highlight]
+      trigger(target, key);
+      return result;
+    },
+  });
+}
+```
+
+The `receiver` parameter is the proxy object itself. Combined with `Reflect`, it ensures `this` inside getters/setters always points to the proxy — no dependency tracking leaks.
+
+## Aside #2: `wrapFunc` → `effect`, Auto-Execute
+
+Our earlier `wrapFunc` requires a manual first call to register dependencies — a bit verbose. Vue3's equivalent concept is called `effect`, which **auto-executes once immediately** after wrapping, eliminating the manual first-run:
+
+```js
+function effect(fn) {
+  const wrapped = () => {
+    currentFunc = wrapped;
+    fn();
+    currentFunc = null;
+  };
+  wrapped(); // [!code highlight] execute immediately, auto-collect dependencies
+}
+```
+
+With `effect`, the example becomes even cleaner:
+
+```js
+const profile = reactive({ age: 13, name: "John" });
+
+effect(renderAge); // auto-executes once, collecting dependencies along the way
+effect(renderName); // same
+
+profile.age = 18; // automatically triggers renderAge to re-run // [!code highlight]
+```
+
+No more manual `renderAge()` or `renderName()` calls. Clean and crisp.
+
+## Aside #3: Scaling to Multiple Objects With WeakMap
+
+Our current `dependenciesMap = {}` only works for a single reactive object. Try creating two:
+
+```js
+const profile = reactive({ age: 13 });
+const settings = reactive({ age: 99 }); // both share the same key "age"!
+```
+
+Both objects share a flat key `"age"` in `dependenciesMap`, so their dependants get mixed up — modifying `profile.age` would wrongly trigger `settings`'s dependants too.
+
+Vue3 solves this with a **`WeakMap`** — keying the dependency graph by the raw target object:
+
+```js
+const targetMap = new WeakMap(); // [!code highlight]
+
+function track(target, key) {
+  if (!currentFunc) return;
+  let depsMap = targetMap.get(target); // [!code highlight]
+  if (!depsMap) {
+    targetMap.set(target, (depsMap = new Map())); // [!code highlight]
+  }
+  let deps = depsMap.get(key);
+  if (!deps) {
+    depsMap.set(key, (deps = new Set()));
+  }
+  deps.add(currentFunc);
+}
+
+function trigger(target, key) {
+  const depsMap = targetMap.get(target); // [!code highlight]
+  if (!depsMap) return;
+  const deps = depsMap.get(key);
+  if (deps) {
+    deps.forEach((func) => func());
+  }
+}
+```
+
+Now each reactive object gets its own isolated `depsMap`. Why `WeakMap` instead of `Map`? When a reactive object is no longer referenced anywhere, its `WeakMap` entry is automatically garbage-collected — no manual cleanup, no memory leak. That's exactly what Vue3's internal reactivity system does under the hood.
