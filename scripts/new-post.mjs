@@ -1,11 +1,12 @@
 #!/usr/bin/env bun
-import { writeFileSync } from "fs";
+import { writeFileSync, mkdirSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const BLOG_DIR = resolve(__dirname, "../src/content/blog");
+const LOCALES = ["en", "zh-cn"];
 
 const title = process.argv.slice(2).join(" ").trim();
 if (!title) {
@@ -27,14 +28,23 @@ if (!slug) {
 const now = new Date();
 const pubDate = `${now.toLocaleDateString("en-US", { month: "short" })} ${String(now.getDate()).padStart(2, "0")} ${now.getFullYear()}`;
 
-const filePath = resolve(BLOG_DIR, `${slug}.mdx`);
+const created = [];
 
-const content = `---
+for (const locale of LOCALES) {
+  const localeDir = resolve(BLOG_DIR, locale);
+  mkdirSync(localeDir, { recursive: true });
+
+  const filePath = resolve(localeDir, `${slug}.mdx`);
+
+  const localeLabel = locale === "zh-cn" ? "中文" : "English";
+
+  const content = `---
 # ---- REQUIRED ----
 title: "${title}"
 description: ""
 pubDate: "${pubDate}"
 tags: []
+lang: "${locale}"
 
 # ---- OPTIONAL ----
 published: true
@@ -47,8 +57,13 @@ published: true
 # customOGImage: "/src/assets/posts/image.jpg"
 ---
 
+${localeLabel} version
 Write your content here.
 `;
 
-writeFileSync(filePath, content, "utf-8");
-console.log(`✅ Created ${filePath}`);
+  writeFileSync(filePath, content, "utf-8");
+  created.push(filePath);
+  console.log(`✅ [${locale}] Created ${filePath}`);
+}
+
+console.log(`\n🎉 Done! ${created.length} files created for "${title}".`);
