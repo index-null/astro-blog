@@ -80,7 +80,7 @@ if (replacedHero && !images[replacedHero])
         )
       }
 
-      <Giscus />
+      <Giscus slug={Astro.params.slug!} />
     </BlogPost>
   </main>
   <Footer />

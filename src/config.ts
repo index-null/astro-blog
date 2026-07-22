@@ -44,12 +44,11 @@ export const GISCUS_CONFIG = {
   repoId: "R_kgDOSnQk3w",
   category: "Announcements",
   categoryId: "DIC_kwDOSnQk384C93hs",
-  mapping: "url",
+  mapping: "specific",
   strict: "0",
   reactionsEnabled: "1",
   emitMetadata: "0",
   inputPosition: "top",
-  lang: "en",
   loading: "lazy",
 };
 

@@ -2,6 +2,11 @@
 import { GISCUS_CONFIG } from "../config.ts";
 import { getLangFromUrl } from "../i18n/utils";
 
+interface Props {
+  slug: string;
+}
+
+const { slug } = Astro.props;
 const lang = getLangFromUrl(Astro.url);
 const giscusLang = lang === "zh-cn" ? "zh-CN" : "en";
 ---
@@ -10,7 +15,7 @@ const giscusLang = lang === "zh-cn" ? "zh-CN" : "en";
   <div class="giscus" id="giscus-container"></div>
 </div>
 
-<script is:inline define:vars={{ config: GISCUS_CONFIG, giscusLang }}>
+<script is:inline define:vars={{ config: GISCUS_CONFIG, giscusLang, slug }}>
   let themeObserver = null;
 
   function getCurrentTheme() {
@@ -41,6 +46,7 @@ const giscusLang = lang === "zh-cn" ? "zh-CN" : "en";
     script.setAttribute('data-category', config.category);
     script.setAttribute('data-category-id', config.categoryId);
     script.setAttribute('data-mapping', config.mapping);
+    script.setAttribute('data-term', slug);
     script.setAttribute('data-strict', config.strict);
     script.setAttribute('data-reactions-enabled', config.reactionsEnabled);
     script.setAttribute('data-emit-metadata', config.emitMetadata);
