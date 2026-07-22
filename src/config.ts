@@ -24,7 +24,7 @@ export const SITE_TITLE = "Pykeguo's blog";
 
 // 网站描述：用于 meta 标签（例如显示在搜索结果中）
 export const SITE_DESCRIPTION =
-  "This is Pykeguo's blog. Sharing coding knowledge";
+  "Pykeguo's blog — Deep dives into JavaScript, TypeScript, Vue, Hono, and frontend engineering. Prototypes, this binding, reactive systems, and more.";
 
 // 网站图标：用于页头图标和浏览器标签页图标（favicon）
 // 可以是 emoji（如 "🙃"）或 public 目录下的文件路径（如 "/favicon.ico"）

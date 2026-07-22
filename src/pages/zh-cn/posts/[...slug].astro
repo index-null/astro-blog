@@ -9,8 +9,10 @@ import FormattedDate from "$components/FormattedDate.astro";
 import { getAllUniqueSlugs, getPostBySlug } from "src/utils";
 import Giscus from "$components/Giscus.astro";
 import Tag from "$components/Tag.astro";
-import { SHOW_IMAGES } from "../../../config.ts";
+import { SHOW_IMAGES, SITE } from "../../../config.ts";
 import { getLangFromUrl } from "../../../i18n/utils";
+import StructuredData from "$components/StructuredData.astro";
+import ArticleMeta from "$components/ArticleMeta.astro";
 
 export async function getStaticPaths() {
   const slugs = await getAllUniqueSlugs();
@@ -37,9 +39,46 @@ if (replacedHero && !images[replacedHero])
   throw new Error(
     `"${post.data.heroImage}" does not exist in glob: "src/assets/**/*.{jpeg,jpg,png,gif}"`
   );
+
+const postUrl = new URL(Astro.url.pathname, SITE).href;
+const ogImageUrl = post.data.customOGImage
+  ? new URL(
+      post.data.customOGImage.replace("/src/assets/", "/open-graph/"),
+      SITE
+    ).href
+  : new URL(`/open-graph/${post.id}.png`, SITE).href;
 ---
 
-<BaseLayout {...post.data} image={post.id + ".png"} lang={lang}>
+<BaseLayout {...post.data} image={post.id + ".png"} lang={lang} pageType="article">
+  <!-- SEO: JSON-LD Structured Data -->
+  <StructuredData
+    type="article"
+    article={{
+      title: post.data.title,
+      description: post.data.description,
+      pubDate: post.data.pubDate,
+      updatedDate: post.data.updatedDate,
+      image: ogImageUrl,
+      url: postUrl,
+      tags: post.data.tags,
+    }}
+    breadcrumbs={[
+      { name: "Home", url: SITE },
+      { name: "Blog", url: new URL("/posts", SITE).href },
+      { name: post.data.title, url: postUrl },
+    ]}
+    slot="head"
+  />
+
+  <!-- SEO: Article-specific meta tags -->
+  <ArticleMeta
+    pubDate={post.data.pubDate}
+    updatedDate={post.data.updatedDate}
+    tags={post.data.tags}
+    image={ogImageUrl}
+    slot="head"
+  />
+
   <Header active="blog" />
 
   <main class="max-w-2xl lg:max-w-3xl mx-auto my-0 h-full p-4">

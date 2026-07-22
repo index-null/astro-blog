@@ -1,5 +1,5 @@
 ---
-import { BASE, SITE, SITE_FAVICON } from "../config.ts";
+import { SITE, SITE_FAVICON, SITE_TITLE } from "../config.ts";
 import { LOCALES, LOCALE_HTML_LANG, type Locale } from "../i18n/config";
 import { getLocalizedPath } from "../i18n/utils";
 
@@ -8,11 +8,18 @@ interface Props {
   description: string;
   image?: string;
   lang?: Locale;
+  pageType?: "website" | "article";
 }
 
 const canonicalURL = new URL(Astro.url.pathname, Astro.site);
 
-const { title, description, image = "main.png", lang = "en" } = Astro.props;
+const {
+  title,
+  description,
+  image = "main.png",
+  lang = "en",
+  pageType = "website",
+} = Astro.props;
 ---
 
 <!-- Global Metadata -->
@@ -44,17 +51,32 @@ const { title, description, image = "main.png", lang = "en" } = Astro.props;
 }
 <link rel="alternate" hreflang="x-default" href={new URL(getLocalizedPath("en", Astro.url.pathname), SITE).href} />
 
+<!-- RSS auto-discovery -->
+<link
+  rel="alternate"
+  type="application/rss+xml"
+  title={`${title} (en)`}
+  href={new URL("/rss.xml", SITE).href}
+/>
+<link
+  rel="alternate"
+  type="application/rss+xml"
+  title={`${title} (zh-CN)`}
+  href={new URL("/zh-cn/rss.xml", SITE).href}
+/>
+
 <!-- Primary Meta Tags -->
 <title>{title}</title>
 <meta name="title" content={title} />
 <meta name="description" content={description} />
 
 <!-- Open Graph / Facebook -->
-<meta property="og:type" content="website" />
+<meta property="og:type" content={pageType} />
 <meta property="og:url" content={Astro.url} />
 <meta property="og:title" content={title} />
 <meta property="og:description" content={description} />
 <meta property="og:locale" content={lang === "zh-cn" ? "zh_CN" : "en_US"} />
+<meta property="og:site_name" content={SITE_TITLE} />
 <meta
   property="og:image"
   content={new URL(getLocalizedPath(lang, "/open-graph/" + image), Astro.url)}

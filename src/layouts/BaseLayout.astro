@@ -12,7 +12,9 @@ const { title, description, image } = Astro.props;
 <!doctype html>
 <html lang={htmlLang} class="h-full antialiased">
   <head>
-    <BaseHead title={title} description={description} image={image} lang={currentLang} />
+    <BaseHead title={title} description={description} image={image} lang={currentLang} pageType={Astro.props.pageType} />
+
+    <slot name="head" />
 
     <!-- theme init (runs before paint) -->
     <script is:inline>

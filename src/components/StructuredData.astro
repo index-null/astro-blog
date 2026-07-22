@@ -1,0 +1,103 @@
+---
+// StructuredData.astro — JSON-LD for Blog, Article & BreadcrumbList
+import { SITE, SITE_TITLE, NAME } from "../config";
+
+export interface ArticleSchema {
+  title: string;
+  description: string;
+  pubDate: Date;
+  updatedDate?: Date;
+  image?: string;
+  url: string;
+  tags?: string[];
+}
+
+interface Props {
+  type: "website" | "article";
+  article?: ArticleSchema;
+  breadcrumbs?: { name: string; url: string }[];
+}
+
+const { type, article, breadcrumbs } = Astro.props;
+
+function buildArticleJson(article: ArticleSchema) {
+  const json: Record<string, unknown> = {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    headline: article.title,
+    description: article.description,
+    datePublished: article.pubDate.toISOString(),
+    author: {
+      "@type": "Person",
+      name: NAME,
+    },
+    publisher: {
+      "@type": "Organization",
+      name: SITE_TITLE,
+    },
+    mainEntityOfPage: {
+      "@type": "WebPage",
+      "@id": article.url,
+    },
+  };
+
+  if (article.updatedDate) {
+    json.dateModified = article.updatedDate.toISOString();
+  }
+
+  if (article.image) {
+    json.image = article.image;
+  }
+
+  if (article.tags && article.tags.length > 0) {
+    json.keywords = article.tags.join(", ");
+  }
+
+  return json;
+}
+
+function buildBreadcrumbJson(
+  breadcrumbs: { name: string; url: string }[],
+) {
+  return {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: breadcrumbs.map((bc, i) => ({
+      "@type": "ListItem",
+      position: i + 1,
+      name: bc.name,
+      item: bc.url,
+    })),
+  };
+}
+
+function buildSiteJson() {
+  return {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    name: SITE_TITLE,
+    url: SITE,
+    potentialAction: {
+      "@type": "SearchAction",
+      target: {
+        "@type": "EntryPoint",
+        urlTemplate: `${SITE}/search?q={search_term_string}`,
+      },
+      "query-input": "required name=search_term_string",
+    },
+  };
+}
+
+const jsonLd: Record<string, unknown>[] = [buildSiteJson()];
+
+if (breadcrumbs && breadcrumbs.length > 0) {
+  jsonLd.push(buildBreadcrumbJson(breadcrumbs));
+}
+
+if (type === "article" && article) {
+  jsonLd.push(buildArticleJson(article));
+}
+---
+
+<script type="application/ld+json" set:html={JSON.stringify(jsonLd)}>
+</script>

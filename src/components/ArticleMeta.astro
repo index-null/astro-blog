@@ -1,0 +1,44 @@
+---
+// Article-specific meta tags for SEO
+import { NAME } from "../config";
+
+interface Props {
+  pubDate: Date;
+  updatedDate?: Date;
+  tags?: string[];
+  image?: string;
+}
+
+const { pubDate, updatedDate, tags = [], image } = Astro.props;
+
+// Build absolute image URL
+const imageUrl = image
+  ? new URL(image.startsWith("/") ? image.slice(0) : image, Astro.site).href
+  : undefined;
+---
+
+<!-- Article: published & modified times -->
+<meta property="article:published_time" content={pubDate.toISOString()} />
+{
+  updatedDate && (
+    <meta property="article:modified_time" content={updatedDate.toISOString()} />
+  )
+}
+
+<!-- Article: author -->
+<meta property="article:author" content={NAME} />
+
+<!-- Article: tags -->
+{tags.map((tag) => (
+  <meta property="article:tag" content={tag} />
+))}
+
+<!-- Twitter: creator (optional, add your @handle if you have one) -->
+<meta name="twitter:creator" content="@index_null" />
+
+<!-- Additional article image for pins/share -->
+{
+  imageUrl && (
+    <meta property="article:image" content={imageUrl} />
+  )
+}
