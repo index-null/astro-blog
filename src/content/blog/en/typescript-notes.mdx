@@ -1,0 +1,346 @@
+---
+title: "TypeScript Notes"
+description: "Notes and tips on TypeScript's type system, including generics, type narrowing, infer, and hand-written implementations of built-in utility types."
+pubDate: "Jul 21 2026"
+tags: ["typescript", "notes"]
+---
+
+> Recently reviewed some TypeScript syntax and techniques — noting them down here.
+
+## Choosing between type and interface
+
+```ts
+// ---- type is better for ----
+
+// Literal unions
+type Status = "idle" | "loading" | "success" | "error"; // [!code highlight]
+
+// Tuples
+type Point2D = [number, number];
+
+// Function types
+type AsyncFetch = (url: string) => Promise<Response>;
+
+// Utility generics
+type Nullable<T> = T | null; // [!code highlight]
+type ValueOf<T> = T[keyof T];
+
+// ---- interface is better for ----
+
+// Business entities
+interface User {
+  id: string;
+  name: string;
+  email: string;
+  avatar?: string;
+}
+
+// API input/output
+interface LoginRequest {
+  username: string;
+  password: string;
+}
+interface LoginResponse {
+  token: string;
+  user: User;
+}
+
+// Class constraints
+interface Repository<T> {
+  findById(id: string): Promise<T | null>;
+  save(entity: T): Promise<void>;
+}
+
+class UserRepository implements Repository<User> {
+  async findById(id: string): Promise<User | null> {
+    /* ... */
+  }
+  async save(user: User): Promise<void> {
+    /* ... */
+  }
+}
+
+// Declaration merging: third-party extension
+interface Window {
+  __INITIAL_STATE__: Record<string, unknown>; // [!code highlight]
+}
+
+// ---- Mixing them ----
+type Geo = { lat: number; lng: number };
+
+interface Venue {
+  name: string;
+  location: Geo; // interface field reusing type
+}
+
+interface EnhancedVenue extends Venue, Geo {} // extends can reuse type
+```
+
+## Extracting union types with as const
+
+`as const` narrows an array literal to a read-only tuple, then index access with `[number]["path"]` extracts the union type of all paths.
+
+```ts
+const ROUTES = [
+  { path: "/", title: "首页", auth: false },
+  { path: "/dashboard", title: "仪表盘", auth: true },
+  { path: "/admin", title: "管理后台", auth: true },
+] as const; // [!code highlight]
+
+// typeof ROUTES[number]["path"] → "/" | "/dashboard" | "/admin"
+type RoutePath = (typeof ROUTES)[number]["path"]; // [!code highlight]
+```
+
+## Two semantics of extends in function generics
+
+```ts
+function getProp<T extends object, K extends PropertyKey, D>( // [!code highlight]
+  obj: T,
+  key: K,
+  defaultValue: D,
+): K extends keyof T ? T[K] : D { // [!code highlight]
+  // ...
+}
+```
+
+- `extends` in angle brackets: generic constraint — requires `T` to be a subtype of `object`, and `K` a subtype of `PropertyKey`.
+- `extends` in return type: conditional type — checks whether `K` is one of `T`'s keys. If so, returns `T[K]`; otherwise returns the default value type `D`.
+
+## Enums
+
+```ts
+// Numeric enum: generates an object after compilation, supports reverse mapping
+enum Color {
+  Red, // 0
+  Green, // 1
+  Blue, // 2
+}
+Color.Red; // 0
+Color[0]; // "Red"  -- reverse mapping // [!code highlight]
+Color[Color.Red]; // "Red"
+
+// Specified values
+enum HttpMethod {
+  GET = "GET",
+  POST = "POST",
+  PUT = "PUT",
+  DELETE = "DELETE",
+}
+
+// const enum: inlined at compile time, no object generated
+const enum Direction { // [!code highlight]
+  Up,
+  Down,
+  Left,
+  Right,
+}
+let dir = Direction.Up; // compiled to → let dir = 0; // [!code highlight]
+// Direction[0]          // Error, const enum has no reverse lookup
+```
+
+## Function Overloads
+
+When a function handles multiple input signatures differently, declare multiple overload signatures and narrow types inside the implementation:
+
+```ts
+function sum(num: number, ...rest: number[]): number;
+function sum(nums: number[]): number;
+function sum(first: number | number[], ...rest: number[]): number {
+  const numList = Array.isArray(first) ? first : [first, ...rest]; // [!code highlight]
+  return numList.reduce((acc, cur) => acc + cur, 0);
+}
+```
+
+Overload signatures expose precise types externally, while the implementation signature uses broader union types for internal narrowing. Note that the implementation signature is not externally visible.
+
+## Union type narrowing and never exhaustiveness check
+
+```ts
+type Admin = { role: "admin"; permissions: string[]; level: number };
+type Member = { role: "member"; nickname: string; joinedAt: Date };
+type User = Admin | Member;
+
+function printUserRole(user: User): string {
+  switch (user.role) {
+    case "admin":
+      return `管理员 Lv${user.level}: 拥有${user.permissions.length}项权限`;
+    case "member":
+      return `成员 ${user.nickname}: 加入于${user.joinedAt.toLocaleString()}`;
+    default: {
+      // Compile-time check: if a new variant is added but not handled,
+      // the type here is no longer never, causing a compile error
+      const _exhaustive: never = user; // [!code highlight]
+      throw new Error(`未处理的 role 类型: ${_exhaustive}`);
+    }
+  }
+}
+```
+
+In the `default` branch, `user` is inferred as `never` — assigning to it ensures all union members have been exhaustively handled by the preceding branches. Adding a new member without a corresponding case triggers a type error here.
+
+## infer pattern matching
+
+`infer` declares a type variable in the `extends` clause of a conditional type, used to capture the specific type at the matched position:
+
+```ts
+type MyAwaited<T> = T extends Promise<infer V> ? V : never; // [!code highlight]
+
+type MyParameters<T extends (...args: any) => any> = T extends (
+  ...args: infer P
+) => any
+  ? P
+  : never;
+
+type MyReturnType<T extends (...args: any) => any> = T extends (
+  ...args: any[]
+) => infer R
+  ? R
+  : never;
+```
+
+The three examples capture the corresponding types via `infer` at the inner Promise, function parameter position, and function return position respectively.
+
+## Mapped Types: conditional filtering and recursion
+
+Filter properties by key — `never` removes the property. Below, only fields matching type V are kept:
+
+```ts
+type PickByValue<T, V> = { // [!code highlight]
+  [K in keyof T as T[K] extends V ? K : never]: T[K]; // [!code highlight]
+};
+```
+
+Recursive deep processing, using `DeepPartial` as an example:
+
+```ts
+type DeepPartial<T> = // [!code highlight]
+  T extends Array<infer U>
+    ? Array<DeepPartial<U>> // Array: recursively process elements
+    : T extends object
+      ? T extends (...args: any[]) => any
+        ? T // Function: keep as-is
+        : { [K in keyof T]?: DeepPartial<T[K]> } // Object: recursively process each property
+      : T; // Primitive type: keep as-is
+```
+
+Looks intimidating, but it's really just three layers: first check if it's an array — if so, recursively process each element; then check if it's a function — functions are kept as-is; finally, if it's an object, recursively process each property. The base case is primitive types, which are kept as-is.
+
+## Hand-written implementations of built-in utility types
+
+```ts
+// Make all optional
+type MyPartial<T> = {
+  [K in keyof T]?: T[K]; // [!code highlight]
+};
+// Make all required
+type MyRequired<T> = {
+  [K in keyof T]-?: T[K];
+};
+// Make all readonly
+type MyReadonly<T> = {
+  readonly [K in keyof T]: T[K];
+};
+// Keep specified keys
+type MyPick<T, K extends keyof T> = {
+  [P in K]: T[P]; // [!code highlight]
+};
+// Omit specified keys
+type MyOmit<T, K extends keyof T> = {
+  [P in keyof T as P extends K ? never : P]: T[P];
+};
+// Syntactic sugar for type-level for-loop
+type MyRecord<K extends PropertyKey, V> = {
+  [P in K]: V;
+};
+// Exclude from union
+type MyExclude<T, U> = T extends U ? never : T; // [!code highlight]
+// Extract from union
+type MyExtract<T, U> = T extends U ? T : never;
+// Remove null/undefined from union
+type MyNonNullable<T> = T extends null | undefined ? never : T;
+// Extract function parameter types
+type MyParameters<T extends (...args: any) => any> = T extends (
+  ...args: infer P
+) => any
+  ? P
+  : never;
+// Extract function return type
+type MyReturnType<T extends (...args: any) => any> = T extends (
+  ...args: any[]
+) => infer R
+  ? R
+  : never;
+
+// [Special explanation]: extracting instance type from constructor type
+//
+// Prerequisite: a class declaration produces two types simultaneously —
+//   Dog        → instance type, i.e. { name: string; bark(): void }
+//   typeof Dog → constructor type, i.e. new () => Dog
+//
+// InstanceType receives the latter (constructor type with new signature),
+// so you must write InstanceType<typeof Dog>, not InstanceType<Dog>.
+//
+// The new in new (...args: any) => infer R is the constructor signature marker:
+// it means "a function callable with new, returning R". infer R captures R to obtain the instance type.
+//
+// abstract new accommodates abstract classes (without it, typeof AbstractClass wouldn't satisfy the new constraint).
+type MyInstanceType<T extends abstract new (...args: any) => any> = // [!code highlight]
+  T extends abstract new (...args: any) => infer R ? R : any; // [!code highlight]
+```
+
+Side note: since `InstanceType<typeof Dog>` returns Dog, why not just write Dog directly?
+
+Answer: when you can write the class name Dog, you indeed don't need it. But in generics/higher-order functions, you only have a constructor type variable T and can't directly reference the class name — you must use `InstanceType<T>` to reverse-extract the instance type:
+
+For example:
+
+```ts
+function createInstance<T extends abstract new (...args: any) => any>(
+  Ctor: T,
+): InstanceType<T> {
+  return new Ctor();
+}
+//
+// Here T is a constructor type and can't be used as an instance type. InstanceType<T> is its "instance unpacker".
+```
+
+Three core techniques: `infer` capture, `as` filtering, and `extends` distribution.
+
+## Class generics: layered constraints
+
+Class-level generics and method-level generics are defined separately — especially typical in the event pub-sub pattern. `Events` determines the overall structure at instantiation, while `K` determines the specific event name at each method call:
+
+```ts
+type BaseEvent = Record<string, any[]>;
+
+class EventEmitter<Events extends BaseEvent> { // [!code highlight]
+  private handlers = new Map<keyof Events, ((...args: any[]) => void)[]>();
+
+  on<K extends keyof Events>( // [!code highlight]
+    key: K,
+    handler: (...args: Events[K]) => void,
+  ): void {
+    const list = this.handlers.get(key);
+    list ? list.push(handler) : this.handlers.set(key, [handler]);
+  }
+
+  emit<K extends keyof Events>(key: K, ...args: Events[K]): void {
+    this.handlers.get(key)?.forEach((fn) => fn(...args));
+  }
+
+  off<K extends keyof Events>(
+    key: K,
+    handler: (...args: Events[K]) => void,
+  ): void {
+    const list = this.handlers.get(key);
+    if (list) {
+      this.handlers.set(
+        key,
+        list.filter((fn) => fn !== handler),
+      );
+    }
+  }
+}
+```
+
+This way, `emit`'s parameter types are fully inferred from `Events[K]`, giving each event precise type hints at the call site.

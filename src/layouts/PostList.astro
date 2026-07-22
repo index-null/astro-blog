@@ -1,11 +1,10 @@
 ---
 import { SITE_TITLE, SITE_DESCRIPTION } from "../config.ts";
-
+import { getLangFromUrl } from "../i18n/utils";
 import Footer from "$components/Footer.astro";
 import Header from "$components/Header.astro";
 import BaseLayout from "$layouts/BaseLayout.astro";
 import BlogEntry from "$components/BlogEntry.astro";
-
 import Pagination from "$components/Pagination.astro";
 import ProseWrapper from "./ProseWrapper.astro";
 import BigBlogEntry from "$components/BigBlogEntry.astro";
@@ -18,10 +17,11 @@ type Props = {
   showFeatured?: boolean;
 };
 
+const lang = getLangFromUrl(Astro.url);
 const { posts, totalPages, currentPage, tag, showFeatured } = Astro.props;
 ---
 
-<BaseLayout title={SITE_TITLE} description={SITE_DESCRIPTION}>
+<BaseLayout title={SITE_TITLE} description={SITE_DESCRIPTION} lang={lang}>
   <Header active="blog" />
   <main class="max-w-2xl lg:max-w-3xl mx-auto mt-8 px-4">
     <ProseWrapper class="pb-8">

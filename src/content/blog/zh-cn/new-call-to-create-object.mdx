@@ -1,0 +1,85 @@
+---
+# ---- REQUIRED ----
+title: "new 调用 —— 一个函数是怎么变成对象的"
+description: "拆解 new 操作符的四步内部流程，看清 class 本质就是 function + 原型绑定的语法糖。"
+pubDate: "Jun 22 2026"
+tags: ["JavaScript", "new", "class", "constructor"]
+lang: "zh-cn"
+
+# ---- OPTIONAL ----
+published: true
+---
+
+`new` 是 [this 四种调用方式](./js-arrow-function-and-this-pointer) 里看起来最不好理解的一种。写下 `new Dog()` 就拿到一个空对象，中间到底发生了什么？
+
+## 为啥可以 `new` 一个 `function` ？
+
+```typescript
+function Dog(name: string) {
+  // [!code highlight]
+  this.name = name; // [!code highlight]
+}
+```
+
+`new Dog("大黄")` 做了下面的事：
+
+1. **创建一个空对象**，并把它的 `__proto__` 指向 `Dog.prototype` （关于原型链部分可以看文末的指引）
+2. **把 `this` 绑定到这个空对象**，执行构造函数体
+3. 构造函数里的 `this.xxx = ...` 就挂在了这个对象上
+4. **返回这个对象**（构造函数没返回对象的话）
+
+## `class` 是语法糖
+
+```typescript
+// class 写法：
+class Dog {
+  // [!code highlight]
+  name: string;
+  constructor(name: string) {
+    // [!code highlight]
+    this.name = name; // [!code highlight]
+  }
+  bark() {
+    console.log(`${this.name}: 汪！`);
+  }
+}
+
+// 等价的原型写法：
+function Dog(this: any, name: string) {
+  // [!code highlight]
+  this.name = name; // [!code highlight]
+}
+Dog.prototype.bark = function () {
+  // [!code highlight]
+  console.log(`${this.name}: 汪！`);
+};
+```
+
+验证 class 到底是不是函数：
+
+```typescript
+console.log(typeof Dog); // "function" —— class 就是 function  // [!code highlight]
+const d = new Dog("大黄");
+console.log(d.bark === Dog.prototype.bark); // true —— 方法在原型上  // [!code highlight]
+```
+
+这也解释了为什么箭头函数作为 class field 不共享：
+
+```typescript
+class Dog {
+  bark() {} // → Dog.prototype.bark（所有实例共享一份）  // [!code highlight]
+  run = () => {}; // → this.run = () => {}（每个实例独享一份）  // [!code highlight]
+}
+```
+
+`run = () => {}` 等价于定义一个普通属性，在 `constructor` 里写 `this.run = () => {}`，挂在了实例身上，绕过了原型共享。
+
+## 更多
+
+`new` 回答了"对象怎么来"，但没回答"原型链上的方法怎么被找到"：
+
+- **`__proto__` 和 `prototype` 到底什么关系？**
+- **原型链怎么一层层向上查找？**
+- **`instanceof` 和 `hasOwnProperty` 的原理？**
+
+深入看这篇：[原型链 —— 从 new 一个对象到方法共享的本质](./js-prototype-chain)

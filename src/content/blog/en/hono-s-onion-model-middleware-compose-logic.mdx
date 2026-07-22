@@ -1,6 +1,6 @@
 ---
 # ---- REQUIRED ----
-title: "Hono's Onion Model - Middleware compose logic"
+title: "Hono's Onion Model — How Middleware Composition Works"
 description: "Deep dive into Hono's middleware compose logic — how next() and the onion model work, and why a closure variable prevents double-invocation."
 pubDate: "Jun 04 2026"
 tags: ["hono", "middleware", "onion model", "compose", "next"]
@@ -308,7 +308,7 @@ function compose(middleware_list) {
       //in the example above, when m2 was called the second time, the i will be 1, and
       if (i <= index)
         throw new Error(
-          `next() called multiple times, now the index is ${index} and i is ${i}`
+          `next() called multiple times, now the index is ${index} and i is ${i}`,
         ); // [!code highlight]
       index = i;
       const fn = middleware_list[i];
@@ -361,7 +361,7 @@ When I first looked at Hono's `compose()` function signature, I was confused by 
 export const compose = <E extends Env = Env>(
   middleware: [[Function, unknown], unknown][] | [[Function]][],
   onError?: ErrorHandler<E>,
-  onNotFound?: NotFoundHandler<E>
+  onNotFound?: NotFoundHandler<E>,
 ): ((context: Context, next?: Next) => Promise<Context>) => {
   // ...
 };
@@ -379,7 +379,7 @@ Looking at the core request handling logic in `hono-base.ts` ([link](https://git
 const composed = compose(
   matchResult[0],
   this.errorHandler,
-  this.#notFoundHandler
+  this.#notFoundHandler,
 );
 const context = await composed(c); // ← No `next` parameter passed!
 ```

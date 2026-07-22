@@ -1,8 +1,8 @@
 ---
-import { POSTS_PER_PAGE } from "../config.ts";
+import { POSTS_PER_PAGE } from "../../config.ts";
 import { getBlogPosts } from "src/utils";
 import PostList from "$layouts/PostList.astro";
-import { getLangFromUrl, useTranslations } from "../i18n/utils";
+import { getLangFromUrl, useTranslations } from "../../i18n/utils";
 
 const lang = getLangFromUrl(Astro.url);
 const t = useTranslations(lang);

@@ -1,0 +1,414 @@
+---
+# ---- REQUIRED ----
+title: "Hono 的洋葱模型 —— 中间件组合逻辑"
+description: "深入 Hono 的中间件组合逻辑 —— next() 与洋葱模型如何工作，以及闭包变量为何能防止重复调用"
+pubDate: "Jun 04 2026"
+tags: ["hono", "middleware", "onion model", "compose", "next"]
+
+# ---- OPTIONAL ----
+published: true
+# hidden: false
+# shortDescription: ""
+updatedDate: "Jun 08 2026"
+# heroImage: "/src/assets/posts/image.jpg"
+# hideHero: false
+# noImage: false
+# customOGImage: "/src/assets/posts/image.jpg"
+---
+
+[Hono](https://hono.dev) 是一个快速、轻量且支持多运行时的 Web 框架。其类 RPC 的 API 配合类型提示，让 TypeScript 全栈通信更加高效。Hono 的高性能很大程度上来源于它简洁的 `中间件组合`（middleware compose）逻辑。
+
+我深入研究了 Hono 的中间件组合逻辑，并从零实现了一个最小化的 `洋葱模型`。
+
+## Hono 中间件的基本用法
+
+处理顺序如下，这被称为"洋葱模型"：
+
+```js
+import { Hono } from "hono";
+const app = new Hono();
+// 全局中间件
+app.use("*", async (c, next) => {
+  console.log("step1. middleware processing request");
+  // 关键行
+  await next(); // [!code highlight]
+  console.log("step3. middleware processing response");
+});
+
+app.get("/", (c) => c.text("step2. context been processed")); // 路由中间件
+export default app;
+```
+
+## `next()` 函数在 Hono 中如何工作
+
+### 源码
+
+你可以在 Hono GitHub 仓库的这段[代码](https://github.com/honojs/hono/blob/main/src/compose.ts)中找到 `next()` 的核心逻辑：
+
+以下是一个简化版本，去掉了 TS 类型定义和边界错误处理：
+
+```js
+export const compose = (middleware) => {
+  return (context, next) => {
+    let index = -1;
+
+    return dispatch(0);
+
+    async function dispatch(i) {
+      if (i <= index) throw new Error("next() called multiple times");
+      index = i;
+      const fn = middleware[i] || next;
+
+      if (!fn) return context;
+      await fn(context, () => dispatch(i + 1));
+    }
+  };
+};
+```
+
+这段代码中有三处可能令人困惑：
+
+- 递归函数 `dispatch`
+- `闭包`变量 `index`
+- 组合时额外传入的 `next` 参数
+
+额外的 `next` 是最耐人寻味的部分。但在深入探讨它之前，我们先尝试用纯 `Promise` 和一个简单的递归函数来构建一个中间件处理管道。
+
+### 从零构建
+
+1. 定义一个简单的 `req` 对象
+
+```js
+const req = {
+  method: "GET",
+  path: "/api/getUserInfo",
+  rsp: "", // 用于存储响应，简单模拟
+};
+```
+
+2. 忽略路径匹配，定义两个全局中间件
+
+```js
+const m1_timer = async (req, next) => {
+  let start = Date.now();
+  console.log("timer start!");
+  await next();
+  let end = Date.now();
+  const duration = end - start;
+  console.log(`timer end,duration:${duration}ms`);
+};
+
+const m2_req_logger = async (req, next) => {
+  console.log(`-> ${req.method} ${req.path}`);
+  await next();
+  console.log(`<- ${JSON.stringify(req.rsp)}`);
+};
+```
+
+3. 定义一个 `router`，它只修改 `req` 对象，添加 `name` 和 `age` 字段
+
+```js
+const router = async (req) => {
+  console.log("process req");
+  req.rsp = {
+    name: "admin",
+    age: 12,
+  };
+};
+```
+
+我们都知道这两个中间件的执行顺序是 `m1_timer -> m2_req_logger -> router`，然后响应会依次经过 `m2_req_logger` 和 `m1_timer` 处理。
+
+所以关键在于 `next()` 函数 —— 我们希望它按中间件列表的顺序调用下一个中间件。
+
+于是有了：
+
+```js
+const middleware_list = [m1_timer, m2_req_logger, router];
+```
+
+4. `dispatch` 函数
+
+```js
+async function dispatch(i) {
+  const cw = middleware_list[i]; // 2. 获取当前中间件
+  const next = () => {
+    dispatch(i + 1); // [!code highlight]
+  }; // 3. 获取下一个中间件的调用器
+  await cw(req, next); // 4. 调用当前中间件
+}
+await dispatch(0); // 1. 启动 dispatch，第一个中间件是 m1_timer
+```
+
+### 运行时流程
+
+1. 进入中间件 `m1_timer`
+
+```js
+const m1_timer = async (req, next) => {
+  let start = Date.now(); // 5. 启动计时器
+  console.log("timer start!");
+  await next(); // 6. next() 是调用下一个中间件的 dispatch()
+  let end = Date.now(); // 7. 后续部分会被包装进 promise.then()，在下一个中间件（即 m2_req_logger）完全执行完毕（即标记为 fulfilled）后才执行
+  console.log(`timer end,duration:${duration}ms`);
+};
+/* dispatch 调用，将下一个中间件调用器传递给 m2_req_logger */
+```
+
+2. 进入中间件 `m2_req_logger`
+
+```js
+const m2_req_logger = async (req, next) => {
+  console.log(`-> ${req.method} ${req.path}`); // 8. 记录请求
+  await next(); // 9. 此 next() 将调用 router
+  console.log(`<- ${JSON.stringify(req.rsp)}`); // 同上
+};
+```
+
+3. 进入 `router`
+
+```js
+const router = async (req) => {
+  console.log("process req"); // 10. 记录并修改 req 对象
+  req.rsp = {
+    name: "admin",
+    age: 12,
+  };
+};
+```
+
+4. 回到 `m2_req_logger`
+
+```js
+/* router 中没有 next()，实际上 dispatch(3) 不会被 router 接收。*/
+/* 因此 dispatch(2) 之后的 promise 会 resolve，这意味着我们回到 m2_req_logger */
+const m2_req_logger = async (req, next) => {
+  console.log(`-> ${req.method} ${req.path}`);
+  await next();
+  console.log(`<- ${JSON.stringify(req.rsp)}`); // 11. 此行日志将被执行
+};
+```
+
+5. 回到 `m1_timer`
+
+```js
+/* 同理，之后我们回到 m1_timer */
+const m1_timer = async (req, next) => {
+  let start = Date.now();
+  console.log("timer start!");
+  await next();
+  let end = Date.now(); // 12. 此计算和日志行将被执行
+  console.log(`timer end,duration:${duration}ms`);
+};
+```
+
+### 最终结果
+
+```js
+timer start!
+-> GET /api/getUserInfo
+process req
+<- {"name":"admin","age":12}
+timer end,duration:4ms
+```
+
+至此我们发现，`dispatch()` 就是 `next()` —— 我们向该函数传入索引号，当它被调用时，会执行相应的中间件逻辑。同时，调用后续中间件的下一个 `dispatch()` 会被重命名为 `next()` 并传递给当前中间件运行时。
+
+## 闭包变量：`index`
+
+现在来考虑一种情况：如果有人在中件逻辑中多次调用了 `next()` 呢？
+
+例如：
+
+```js
+const m1_timer = async (req, next) => {
+  let start = Date.now();
+  await next();
+  await next(); // 再次调用 next()！ // [!code highlight]
+  let end = Date.now();
+  console.log(`timer end,duration:${duration}ms`);
+};
+```
+
+如果你熟悉 `Promise` 的工作原理，就很容易理解：后续中间件会被再次执行 —— 这意味着所有后续中间件连同路由处理器都会被**级联执行两次**。
+
+示例如下：
+
+```js
+const req = {
+  method: "GET",
+  path: "/api/getUserInfo",
+  rsp: "",
+};
+
+const m1 = async (req, next) => {
+  console.log("m1 before");
+  await next();
+  await next();
+  console.log("m1 after");
+};
+
+const m2 = async (req, next) => {
+  console.log("m2 before");
+  await next();
+  console.log("m2 after");
+};
+
+const m3 = async (req, next) => {
+  console.log("m3 before");
+  await next();
+  console.log("m3 after");
+};
+
+const r4 = async (req) => {
+  console.log("r4 processing request");
+  req.rsp = { name: "admin", age: 12 };
+};
+
+const middleware_list = [m1, m2, m3, r4];
+
+async function dispatch(i) {
+  const fn = middleware_list[i];
+  if (!fn) return;
+  await fn(req, () => dispatch(i + 1));
+}
+
+await dispatch(0);
+```
+
+输出：
+
+```js
+m1 before
+m2 before
+m3 before
+r4 processing request
+m3 after
+m2 after
+m2 before // m1 多次调用了 next()，因此所有后续中间件被再次执行（从 m2 开始）// [!code highlight]
+m3 before // [!code highlight]
+r4 processing request // [!code highlight]
+m3 after // [!code highlight]
+m2 after // [!code highlight]
+m1 after // [!code highlight]
+```
+
+所以我们需要一种万无一失的方式来避免这个问题，因为生产代码中出现这种 bug 是致命的。
+
+一个直接的解决方案是使用一个追踪变量来确保中间件索引不会被重复调用。我们需要一个一次性变量来追踪每个请求的处理过程。`闭包`变量是理想的解决方案。
+
+Hono 是这样做的：
+
+```js
+function compose(middleware_list) {
+  return async (req) => {
+    let index = -1; // 闭包变量 [!code highlight]
+    await dispatch(0);
+    async function dispatch(i) {
+      // 在上述示例中，当 m2 被第二次调用时，i 为 1，而
+      if (i <= index)
+        throw new Error(
+          `next() called multiple times, now the index is ${index} and i is ${i}`,
+        ); // [!code highlight]
+      index = i;
+      const fn = middleware_list[i];
+      const next = () => dispatch(i + 1);
+      await fn(req, next);
+    }
+  };
+}
+
+const composed = compose(middleware_list);
+const start = async () => {
+  await composed(req);
+};
+start();
+```
+
+再次运行以上代码，输出如下：
+
+```js
+m1 before
+m2 before
+m3 before
+r4 processing request
+m3 after
+m2 after
+ERROR!
+/tmp/yzODUs5eJS/main.js:39
+        if (i<=index) throw new Error(`next() called multiple times for index is ${index} and i is ${i}`);
+                            ^
+
+Error: next() called multiple times for index is 3 and i is 1 // [!code highlight]
+    at dispatch (/tmp/yzODUs5eJS/main.js:39:29)
+    at next (/tmp/yzODUs5eJS/main.js:42:28)
+    at m1 (/tmp/yzODUs5eJS/main.js:10:9)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async dispatch (/tmp/yzODUs5eJS/main.js:43:9)
+    at async /tmp/yzODUs5eJS/main.js:36:5
+    at async start (/tmp/yzODUs5eJS/main.js:51:5)
+
+Node.js v22.21.1
+```
+
+显然，最终 `index` 停在了 `router` 处，但当 `m2` 被第二次调用时，`i` 仍然是 `1`，因为传入给它的是 `dispatch(1)`。
+
+## 额外参数：`next`
+
+最初看 Hono 的 `compose()` 函数签名时，可选参数 `next` 让我感到困惑：
+
+```typescript
+export const compose = <E extends Env = Env>(
+  middleware: [[Function, unknown], unknown][] | [[Function]][],
+  onError?: ErrorHandler<E>,
+  onNotFound?: NotFoundHandler<E>,
+): ((context: Context, next?: Next) => Promise<Context>) => {
+  // ...
+};
+```
+
+我最初猜测这个 `next` 参数用于**分层方式**构建中间件链 —— 先组合全局中间件，然后将路由特定处理器作为 `next` 传入以继续执行。这样 Hono 就能在不同路由匹配中复用全局中间件。
+
+**然而，在深入研究 Hono 源码后，我发现这个猜测是错误的。**
+
+### 真相：`next` 并未用于核心流程
+
+查看 `hono-base.ts` 中的核心请求处理逻辑（[链接](https://github.com/honojs/hono/blob/c78932d745cdf6284ae131a156479ac930da0262/src/hono-base.ts#L454)）：
+
+```typescript
+const composed = compose(
+  matchResult[0],
+  this.errorHandler,
+  this.#notFoundHandler,
+);
+const context = await composed(c); // ← 没有传入 `next` 参数！
+```
+
+**核心的 `compose()` 调用并没有传入任何 `next` 参数。**
+
+这意味着 Hono **并未**使用 `next` 来实现分层中间件组合。相反，所有匹配的中间件和路由处理器通过 `matchResult[0]` 被组合成一条单一的链。
+
+### 那 `next` 参数究竟是做什么的？
+
+经过更多研究，我发现 `next` 参数主要用于**子应用挂载**（`app.route()`）。
+
+当你挂载一个子应用时：
+
+```typescript
+const app = new Hono();
+const subApp = new Hono();
+
+subApp.get("/hello", (c) => c.text("Hello from subApp"));
+app.route("/api", subApp);
+```
+
+Hono 需要一种方式将控制权从父应用传递到子应用。这就是 `next` 的作用所在。实现可以在 `hono-base.ts` 中找到（[链接](https://github.com/honojs/hono/blob/c78932d745cdf6284ae131a156479ac930da0262/src/hono-base.ts#L224)）。
+
+```typescript
+handler = async (c: Context, next: Next) =>
+  (await compose([], app.errorHandler)(c, () => r.handler(c, next))).res; // [!code highlight]
+```
+
+不过，完全理解子应用挂载机制还需要了解 Hono 的路由和路径匹配系统，这非常有趣，值得单独深入探讨。
+
+如果现在看起来有点困惑也不用担心，我会在后续文章中逐步拆解，深入介绍 Hono 的路由机制和匹配算法。

@@ -1,0 +1,380 @@
+---
+# ---- REQUIRED ----
+title: "The Prototype Chain — How `new` Creates Objects and Enables Method Sharing"
+description: "Stop memorizing the difference between __proto__ and prototype. Starting from what `new` really does, we break down why the prototype chain exists, how it saves memory, and the real mechanics behind class syntactic sugar."
+pubDate: "Jul 22 2026"
+tags: ["JavaScript", "prototype", "class", "new"]
+lang: "en"
+
+# ---- OPTIONAL ----
+published: true
+# hidden: false
+# shortDescription: ""
+# updatedDate: ""
+# heroImage: "/src/assets/posts/image.jpg"
+# hideHero: false
+# noImage: false
+# customOGImage: "/src/assets/posts/image.jpg"
+---
+
+Last time when discussing `this`, I mentioned that **ordinary methods live on the prototype and are shared by all instances. Arrow functions are instance properties, each object gets its own copy.** I didn't expand on it then—this article dives deeper.
+
+## Without Prototypes: What Happens When You `new` a Thousand Objects?
+
+Let's start with the most basic problem: creating objects with constructors.
+
+```typescript
+function Dog(name: string) {
+  this.name = name;
+  this.bark = function () {
+    console.log(`${this.name}: 汪！`);
+  };
+}
+
+const d1 = new Dog("大黄");
+const d2 = new Dog("小黑");
+```
+
+Does this work? Yes. Is it good? No!
+
+```typescript
+console.log(d1.bark === d2.bark); // false // [!code highlight]
+```
+
+**Every time you call `new`, a brand-new copy of the `bark` function is created.** `d1` and `d2` each hold an identical function definition, but they are two independent objects in memory.
+
+It makes sense for `name` to differ per instance—each gets its own copy. But `bark` behaves exactly the same every time. Why store a thousand copies?
+
+**The solution: extract shared methods into a common place where all instances can look them up.**
+
+## The Perfect Storage Location
+
+Since all instances are born from a single class, and a class is essentially a function, why not store all shared methods directly on a property called `prototype` of that function?
+
+```typescript
+function Dog(name: string) {
+  this.name = name; // per-instance data
+}
+
+// Shared methods go here:
+Dog.prototype.bark = function () {
+  // [!code highlight]
+  console.log(`${this.name}: 汪！`);
+};
+
+const d1 = new Dog("大黄");
+const d2 = new Dog("小黑");
+
+d1.bark(); // "大黄: 汪！"
+d2.bark(); // "小黑: 汪！"
+
+console.log(d1.bark === d2.bark); // true — same function! // [!code highlight]
+```
+
+From now on, each instance only needs to remember which class created it, using a property called `__proto__` to point to its shared repository.
+
+`d1` itself doesn't have `bark`, yet `d1.bark()` works. This is the JS engine doing a lookup behind the scenes:
+
+```
+1. Does d1 have its own bark? → No
+2. Look on d1.__proto__ (i.e., Dog.prototype) → Found!
+3. Execute it—since d1 called it, d1 naturally becomes this
+```
+
+So **the core value of prototypes: sharing methods to save memory.**
+
+## What Does `new` Actually Do?
+
+```typescript
+// new Dog("大黄") is equivalent to:
+function myNew<T>(constructor: new (...args: any[]) => T, ...args: any[]): T {
+  // 1. Create an empty object with __proto__ pointing to constructor.prototype
+  const obj = Object.create(constructor.prototype); // [!code highlight]
+
+  // 2. Bind constructor's this to the empty object, execute it with args
+  const result = constructor.apply(obj, args);
+
+  // 3. Return the object
+  return obj; // [!code highlight]
+}
+
+const d = myNew(Dog, "大黄");
+d.bark(); // "大黄: 汪！"
+```
+
+Note that `Object.create(Dog.prototype)` creates an empty object whose `__proto__` is set to `Dog.prototype`. That's why it can access methods on the prototype.
+
+## The Prototype Chain
+
+Prototypes don't just share methods—one prototype can point to another. When they chain together, that's the prototype chain.
+
+First, a prerequisite: when a function is created, its `prototype` object—besides methods you manually add—**comes with a default `constructor` property** that points back to the function itself:
+
+```typescript
+function Animal(type: string) {
+  this.type = type;
+}
+Animal.prototype.breathe = function () {
+  console.log(`${this.type} 在呼吸`);
+};
+
+console.log(Animal.prototype.constructor === Animal); // true — present by default // [!code highlight]
+```
+
+You rarely use `constructor` in practice, but it's the prototype object's "ID card"—it declares which constructor this prototype repository belongs to.
+
+Now let's manually implement class inheritance—making Dog inherit from Animal—in four steps.
+
+### Step 1: Inherit Properties
+
+`type` is per-instance data and cannot be shared. You must manually call Animal inside Dog's constructor to assign it:
+
+```typescript
+function Dog(name: string) {
+  Animal.call(this, "狗"); // Manually execute Animal constructor, writing this.type = "狗" to the current instance // [!code highlight]
+  this.name = name; // Dog's own property
+}
+```
+
+Without this line → `d.type` is `undefined`. The prototype chain only handles method lookup—it doesn't handle properties.
+
+### Step 2: Bridge with `Object.create`
+
+To let Dog instances call `breathe()`, we need to connect Dog's prototype repository to Animal's prototype repository.
+
+`Object.create(x)` does one thing: **creates an empty object `{}` and sets its `__proto__` to `x`.**
+
+```typescript
+Dog.prototype = Object.create(Animal.prototype); // [!code highlight]
+```
+
+At this point, Dog.prototype looks like this:
+
+```
+Dog.prototype = {
+  // empty object, nothing inside
+  // __proto__ → Animal.prototype = { breathe, constructor: Animal }
+}
+```
+
+> Why not `Dog.prototype = Animal.prototype`? That would make two constructors share the same prototype object—adding a method to Dog.prototype would add it to Animal.prototype too. A dog's bark would become every animal's bark. You must use `Object.create` to create an intermediary object.
+
+### Step 3: Fix `constructor`
+
+`Dog.prototype` is now an empty object with no `constructor` property of its own. Following `__proto__` upward, we find `Animal.prototype.constructor`, which is `Animal`:
+
+```typescript
+console.log(Dog.prototype.constructor); // Animal ← wrong, should be Dog // [!code highlight]
+```
+
+Dog's prototype repository has Animal on its ID card. Let's fix it directly on the empty object:
+
+```typescript
+Dog.prototype.constructor = Dog; // [!code highlight]
+```
+
+**Nobody uses this property day-to-day, but it ensures the fact of "which constructor this prototype belongs to" is correct.**
+
+### Step 4: Add Dog's Own Methods
+
+The bridge is built and constructor is fixed. Now add Dog's unique methods to its prototype:
+
+```typescript
+Dog.prototype.bark = function () {
+  console.log(`${this.name}: 汪！`);
+};
+```
+
+Full code + verification:
+
+```typescript
+function Animal(type: string) {
+  this.type = type;
+}
+Animal.prototype.breathe = function () {
+  console.log(`${this.type} 在呼吸`);
+};
+
+function Dog(name: string) {
+  Animal.call(this, "狗"); // ① inherit properties
+  this.name = name;
+}
+
+Dog.prototype = Object.create(Animal.prototype); // ② bridge
+Dog.prototype.constructor = Dog; // ③ fix constructor
+Dog.prototype.bark = function () {
+  // ④ add Dog's own methods
+  console.log(`${this.name}: 汪！`);
+};
+
+const d = new Dog("大黄");
+
+d.bark(); // "大黄: 汪！"                — found on Dog.prototype // [!code highlight]
+d.breathe(); // "狗 在呼吸"                 — up via __proto__ to Animal.prototype // [!code highlight]
+d.toString(); // "[object Object]"           — further up to Object.prototype // [!code highlight]
+```
+
+The lookup chain:
+
+```
+d = { name: "大黄", type: "狗" }
+  → __proto__: Dog.prototype = { bark, constructor: Dog }
+    → __proto__: Animal.prototype = { breathe, constructor: Animal }
+      → __proto__: Object.prototype = { toString, hasOwnProperty, ... }
+        → __proto__: null
+```
+
+**The rule is simple: when looking up a property, traverse `__proto__` layer by layer until you hit `null`. If not found, return `undefined`.**
+
+## `class` Is Just Syntactic Sugar
+
+The previous section manually implemented `Dog extends Animal` in four steps. ES6 `class` essentially automates this entire process:
+
+```typescript
+class Animal {
+  type: string;
+
+  constructor(type: string) {
+    this.type = type;
+  }
+
+  breathe() {
+    console.log(`${this.type} 在呼吸`);
+  }
+}
+
+class Dog extends Animal {
+  name: string;
+
+  constructor(name: string) {
+    super("狗"); // ① Inherit properties — equivalent to Animal.call(this, "狗") // [!code highlight]
+    this.name = name;
+  }
+
+  bark() {
+    // ② ③ ④ extends handles this automatically
+    console.log(`${this.name}: 汪！`);
+  }
+}
+```
+
+A single line of `extends` does three things for you:
+
+1. **Bridge**: `Dog.prototype = Object.create(Animal.prototype)` — Step 2
+2. **Fix the ID**: `Dog.prototype.constructor = Dog` — Step 3
+3. **Add methods**: `bark()` in the class body is automatically attached to `Dog.prototype` — Step 4
+
+Let's verify—the class version is identical to the manual prototype version:
+
+```typescript
+const d = new Dog("大黄");
+
+// super("狗") is equivalent to Animal.call(this, "狗")
+console.log(d.type); // "狗"
+
+// bark is on Dog.prototype, same as the manual approach
+console.log(d.hasOwnProperty("bark")); // false
+console.log(d.__proto__.hasOwnProperty("bark")); // true
+
+// The prototype chain structure is unchanged — identical to the previous section's lookup chain
+console.log(d.__proto__ === Dog.prototype); // true // [!code highlight]
+console.log(Dog.prototype.__proto__ === Animal.prototype); // true // [!code highlight]
+console.log(Dog.prototype.constructor === Dog); // true — constructor is also auto-fixed // [!code highlight]
+
+d.bark(); // "大黄: 汪！"
+d.breathe(); // "狗 在呼吸"
+```
+
+**class didn't invent a new mechanism—it just wrapped the "four-step inheritance method" into `extends` + `super`.** The underlying prototype chain lookup logic hasn't changed one bit.
+
+With this mapping in mind, let's examine a common pitfall—why arrow functions as class fields are not shared:
+
+```typescript
+class Dog {
+  name: string = "";
+
+  // Ordinary method → Dog.prototype.bark
+  bark() {
+    console.log(this.name);
+  }
+
+  // Arrow property → each instance gets its own copy, equivalent to writing this.run = () => {} in constructor
+  run = () => {
+    console.log(this.name);
+  };
+}
+
+const d1 = new Dog();
+const d2 = new Dog();
+
+console.log(d1.bark === d2.bark); // true  — shared on prototype // [!code highlight]
+console.log(d1.run === d2.run); // false — instance property, each has its own // [!code highlight]
+```
+
+`run = () => {}` as a class field is essentially equivalent to:
+
+```typescript
+class Dog {
+  constructor() {
+    this.run = () => {
+      console.log(this.name);
+    };
+  }
+}
+```
+
+**Anything written in `constructor` is attached to the instance—it will not be shared on the prototype.**
+
+## Three Common Interview Questions, Answered Instantly with the Prototype Chain
+
+### How Does `instanceof` Work?
+
+```typescript
+d instanceof Dog; // true
+d instanceof Animal; // true
+d instanceof Object; // true
+```
+
+What it does: **traverse up `d.__proto__` and check if it can find `Dog.prototype` (or `Animal.prototype`, `Object.prototype`).** If found, return `true`.
+
+### What Is `hasOwnProperty` For?
+
+```typescript
+const d = new Dog("大黄");
+
+console.log(d.hasOwnProperty("name")); // true  — name is its own // [!code highlight]
+console.log(d.hasOwnProperty("bark")); // false — bark is on the prototype // [!code highlight]
+```
+
+It's commonly used to filter out prototype methods when iterating over an object:
+
+```typescript
+for (const key in d) {
+  if (d.hasOwnProperty(key)) {
+    console.log(`own property: ${key}`);
+  }
+}
+// Output: "own property: name"
+```
+
+### What Does `Object.create(null)` Mean?
+
+```typescript
+const pureObj = Object.create(null); // [!code highlight]
+pureObj.name = "pure";
+
+console.log(pureObj.toString); // undefined // [!code highlight]
+console.log(pureObj.__proto__); // undefined
+```
+
+Creates a **pure dictionary object without a prototype**—not even `toString` or `hasOwnProperty`. Ideal as a plain key-value map without worrying about prototype property pollution.
+
+## Prototype Chain Diagram
+
+::excalidraw[/src/assets/posts/js-prototype-chain.svg]
+
+In summary:
+
+1. **Prototypes exist to share methods and save memory.** Methods live on `prototype`; instances find them via `__proto__`.
+2. **`prototype` is the "template repository" created by a function. Each repository also has its own `__proto__` pointing to the upper repository—forming the "roadmap" for property lookup.**
+3. **class syntax didn't invent anything new—it's just syntactic sugar over the prototype mechanism.** Once you understand the prototype chain, everything class does is traceable and predictable.

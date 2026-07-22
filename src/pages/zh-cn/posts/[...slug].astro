@@ -6,31 +6,28 @@ import Header from "$components/Header.astro";
 import Footer from "$components/Footer.astro";
 import { Image } from "astro:assets";
 import FormattedDate from "$components/FormattedDate.astro";
-import { getAllBlogPosts, getSlugFromId } from "src/utils";
+import { getAllUniqueSlugs, getPostBySlug } from "src/utils";
 import Giscus from "$components/Giscus.astro";
 import Tag from "$components/Tag.astro";
-import { SHOW_IMAGES } from "../../config.ts";
-import { getLangFromUrl } from "../../i18n/utils";
+import { SHOW_IMAGES } from "../../../config.ts";
+import { getLangFromUrl } from "../../../i18n/utils";
 
 export async function getStaticPaths() {
-  const posts = await getAllBlogPosts(true);
-  // Filter to only en and demo posts (NOT zh-cn ones)
-  const enPosts = posts.filter((post) => {
-    const locale = post.id.split("/")[0];
-    return locale === "en" || locale === "demo";
-  });
-
-  return enPosts.map((post) => ({
-    params: { slug: getSlugFromId(post.id) },
-    props: post,
+  const slugs = await getAllUniqueSlugs();
+  return slugs.map((slug) => ({
+    params: { slug },
   }));
 }
 
-type Props = CollectionEntry<"blog">;
-
-const post = Astro.props;
-const { Content } = await render(post);
 const lang = getLangFromUrl(Astro.url);
+const slug = Astro.params.slug!;
+const post = await getPostBySlug(lang, slug);
+
+if (!post) {
+  return Astro.redirect("/404");
+}
+
+const { Content } = await render(post);
 
 const images = import.meta.glob<{ default: ImageMetadata }>(
   "/src/assets/**/*.{jpeg,jpg,png,gif}"

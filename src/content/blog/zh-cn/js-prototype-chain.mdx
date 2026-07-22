@@ -1,0 +1,379 @@
+---
+# ---- REQUIRED ----
+title: "原型链 —— 从 new 一个对象到方法共享的本质"
+description: "不再靠死记 __proto__ 和 prototype 的区别，从「new 到底干了什么」出发，一步步拆解原型链为什么存在、怎么省内存、以及 class 语法糖背后真正的运作机制。"
+pubDate: "Jul 22 2026"
+tags: ["JavaScript", "prototype", "class", "new"]
+lang: "zh-cn"
+
+# ---- OPTIONAL ----
+published: true
+# hidden: false
+# shortDescription: ""
+# updatedDate: ""
+# heroImage: "/src/assets/posts/image.jpg"
+# hideHero: false
+# noImage: false
+# customOGImage: "/src/assets/posts/image.jpg"
+---
+
+上次聊 `this` 的时候提到过一句话：**普通方法在原型上，所有实例共享一份。箭头函数是实例属性，每个对象独享一份。** 当时没展开，这篇文章深入讲讲。
+
+## 假如没有原型，new 一千个对象会怎样？
+
+先回到最原始的问题：用构造函数创建对象。
+
+```typescript
+function Dog(name: string) {
+  this.name = name;
+  this.bark = function () {
+    console.log(`${this.name}: 汪！`);
+  };
+}
+
+const d1 = new Dog("大黄");
+const d2 = new Dog("小黑");
+```
+
+这能跑吗？能。好吗？不好！
+
+```typescript
+console.log(d1.bark === d2.bark); // false // [!code highlight]
+```
+
+**`bark` 这个函数，每 `new` 一次就创建一份全新的副本。** `d1` 和 `d2` 各自持有一个完全相同的函数定义，但它们在内存里是两个独立的对象。
+
+`name` 每个实例不一样，属于每个人自己的独立属性，各自存一份，合理。但 `bark` 的行为完全一样，凭什么存一千份？
+
+**解决方法是，把共享的方法抽到一个公共的地方，所有实例都去那找。**
+
+## 最适合的存放位置
+
+既然所有实例都是从一个类诞生的，类的本质又是一个function，那我们直接把所有的共享方法放在这个`function`的一个叫作`prototype`的属性里不就可以了！
+
+```typescript
+function Dog(name: string) {
+  this.name = name; // 每个实例独有的数据
+}
+
+// 共享的方法放在这：
+Dog.prototype.bark = function () { // [!code highlight]
+  console.log(`${this.name}: 汪！`);
+};
+
+const d1 = new Dog("大黄");
+const d2 = new Dog("小黑");
+
+d1.bark(); // "大黄: 汪！"
+d2.bark(); // "小黑: 汪！"
+
+console.log(d1.bark === d2.bark); // true —— 同一个函数！ // [!code highlight]
+```
+
+如此一来，只需要让每一个实例记住自己是哪个类实例化出来的，用一个叫作`_proto_`的属性指向它的`共享仓库`
+
+`d1` 自己身上没有 `bark`，但 `d1.bark()` 能正常调用。本质就是JS 引擎在背后做了一次查找：
+
+```
+1. d1 自己有 bark 吗？ → 没有
+2. 去 d1.__proto__（也就是 Dog.prototype）上找 → 找到了！
+3. 执行它，d1调用的，所以天然 d1 作为 this
+```
+
+所以**原型最核心的价值：共享方法，节省内存。**
+
+## 深挖 `new` 到底做了什么事？
+
+```typescript
+// new Dog("大黄") 等价于：
+function myNew<T>(constructor: new (...args: any[]) => T, ...args: any[]): T {
+  // 1. 创建一个空对象，它的 __proto__ 指向 constructor.prototype
+  const obj = Object.create(constructor.prototype); // [!code highlight]
+
+  // 2. 把 constructor 的 this 绑定到这个空对象，按参执行构造函数
+  const result = constructor.apply(obj, args);
+
+  // 3. 返回该对象
+  return obj; // [!code highlight]
+}
+
+const d = myNew(Dog, "大黄");
+d.bark(); // "大黄: 汪！"
+```
+
+这里注意`Object.create(Dog.prototype)` 创建了一个空对象，空对象的 `__proto__` 被设置为 `Dog.prototype`。所以它能访问原型上的方法。
+
+## 原型链
+
+原型不光能共享方法，还可以让一个原型指向另一个原型。链起来了，就叫原型链。
+
+先认识一个前提：函数被创建时，它的 `prototype` 对象除了你手动加的方法，还**默认自带一个 `constructor` 属性**，指回函数本身：
+
+```typescript
+function Animal(type: string) {
+  this.type = type;
+}
+Animal.prototype.breathe = function () {
+  console.log(`${this.type} 在呼吸`);
+};
+
+console.log(Animal.prototype.constructor === Animal); // true — 默认就有 // [!code highlight]
+```
+
+`constructor` 平时用不上，但它是原型对象的"身份证"——声明了这个原型仓库属于哪个构造函数。
+
+现在我们考虑手动实现类继承，让Dog 继承 Animal，分四步走。
+
+### 第一步：继承属性
+
+`type` 是每个实例自己的数据，不能共享，必须在 Dog 构造函数里手动调用 Animal 来赋值：
+
+```typescript
+function Dog(name: string) {
+  Animal.call(this, "狗"); // 手动执行 Animal 构造函数，把 this.type = "狗" 写到当前实例上 // [!code highlight]
+  this.name = name; // Dog 自己的属性
+}
+```
+
+不加这行 → `d.type` 是 `undefined`。原型链只管方法的向上查找，管不了属性。
+
+### 第二步：`Object.create` 搭桥
+
+要让 Dog 的实例能调用 `breathe()`，需要把 Dog 的原型仓库连到 Animal 的原型仓库上。
+
+`Object.create(x)` 做一件事：**创建一个空对象 `{}`，并把这个空对象的 `__proto__` 设为 `x`**。
+
+```typescript
+Dog.prototype = Object.create(Animal.prototype); // [!code highlight]
+```
+
+此时 Dog.prototype 长这样：
+
+```
+Dog.prototype = {
+  // 空对象，里面什么也没有
+  // __proto__ → Animal.prototype = { breathe, constructor: Animal }
+}
+```
+
+> 为什么不是 `Dog.prototype = Animal.prototype`？那样两个构造函数共享同一个原型对象，往 Dog.prototype 上加方法等于往 Animal 上加——狗叫变成所有动物都会叫了。必须用 `Object.create` 造一个中介对象。
+
+### 第三步：修复 `constructor`
+
+`Dog.prototype` 现在是空对象，它自己没有 `constructor` 属性。顺着 `__proto__` 往上找，找到的是 `Animal.prototype.constructor`，也就是 `Animal`：
+
+```typescript
+console.log(Dog.prototype.constructor); // Animal ← 错了，应该是 Dog // [!code highlight]
+```
+
+Dog 的原型仓库，身份证上写的却是 Animal。直接在空对象上补一个：
+
+```typescript
+Dog.prototype.constructor = Dog; // [!code highlight]
+```
+
+**这个属性平时没人用，但它保证了"这个原型对象属于哪个构造函数"这一事实是正确的。**
+
+### 第四步：加 Dog 自己的方法
+
+桥通了，constructor 也修了，往 Dog 的原型上加独有方法：
+
+```typescript
+Dog.prototype.bark = function () {
+  console.log(`${this.name}: 汪！`);
+};
+```
+
+完整代码 + 验证：
+
+```typescript
+function Animal(type: string) {
+  this.type = type;
+}
+Animal.prototype.breathe = function () {
+  console.log(`${this.type} 在呼吸`);
+};
+
+function Dog(name: string) {
+  Animal.call(this, "狗"); // ① 继承属性
+  this.name = name;
+}
+
+Dog.prototype = Object.create(Animal.prototype); // ② 搭桥
+Dog.prototype.constructor = Dog; // ③ 修复 constructor
+Dog.prototype.bark = function () {
+  // ④ 加 Dog 自己的方法
+  console.log(`${this.name}: 汪！`);
+};
+
+const d = new Dog("大黄");
+
+d.bark(); // "大黄: 汪！"                — Dog.prototype 上找到 // [!code highlight]
+d.breathe(); // "狗 在呼吸"                 — 沿着 __proto__ 上到 Animal.prototype // [!code highlight]
+d.toString(); // "[object Object]"           — 再往上到 Object.prototype // [!code highlight]
+```
+
+查找链路：
+
+```
+d = { name: "大黄", type: "狗" }
+  → __proto__: Dog.prototype = { bark, constructor: Dog }
+    → __proto__: Animal.prototype = { breathe, constructor: Animal }
+      → __proto__: Object.prototype = { toString, hasOwnProperty, ... }
+        → __proto__: null
+```
+
+**规则很简单：找属性时，沿着 `__proto__` 一层一层往上爬，爬到 `null` 为止。找不到就返回 `undefined`。**
+
+## `class` 帮你做的语法糖
+
+上一节用四步手工实现了 `Dog extends Animal`，ES6 的 `class` 本质就是把这套流程自动化了：
+
+```typescript
+class Animal {
+  type: string;
+
+  constructor(type: string) {
+    this.type = type;
+  }
+
+  breathe() {
+    console.log(`${this.type} 在呼吸`);
+  }
+}
+
+class Dog extends Animal {
+  name: string;
+
+  constructor(name: string) {
+    super("狗"); // ① 继承属性 — 等价于 Animal.call(this, "狗") // [!code highlight]
+    this.name = name;
+  }
+
+  bark() {
+    // ② ③ ④ extends 自动帮你干了
+    console.log(`${this.name}: 汪！`);
+  }
+}
+```
+
+一行 `extends`，替你干了三件事：
+
+1. **搭桥**：`Dog.prototype = Object.create(Animal.prototype)` — 对应第二步
+2. **修复身份证**：`Dog.prototype.constructor = Dog` — 对应第三步
+3. **加方法**：class body 里的 `bark()` 自动挂到 `Dog.prototype` 上 — 对应第四步
+
+验证一下，class 版和手工原型版完全一致：
+
+```typescript
+const d = new Dog("大黄");
+
+// super("狗") 等价于 Animal.call(this, "狗")
+console.log(d.type); // "狗"
+
+// bark 在 Dog.prototype 上，和手写一样
+console.log(d.hasOwnProperty("bark")); // false
+console.log(d.__proto__.hasOwnProperty("bark")); // true
+
+// 原型链结构不变 — 和上一节的查找链路一模一样
+console.log(d.__proto__ === Dog.prototype); // true // [!code highlight]
+console.log(Dog.prototype.__proto__ === Animal.prototype); // true // [!code highlight]
+console.log(Dog.prototype.constructor === Dog); // true — constructor 也自动修复了 // [!code highlight]
+
+d.bark(); // "大黄: 汪！"
+d.breathe(); // "狗 在呼吸"
+```
+
+**class 没有创造新机制，它只是把「四步继承法」包装成了 `extends` + `super`。** 底层的原型链查找逻辑没有一丝改变。
+
+有了这套对应关系，再看一个容易踩坑的细节——为什么箭头函数作为 class field 时不是共享的：
+
+```typescript
+class Dog {
+  name: string = "";
+
+  // 普通方法 → Dog.prototype.bark
+  bark() {
+    console.log(this.name);
+  }
+
+  // 箭头属性 → 每个实例独享，等价于在 constructor 里写 this.run = () => {}
+  run = () => {
+    console.log(this.name);
+  };
+}
+
+const d1 = new Dog();
+const d2 = new Dog();
+
+console.log(d1.bark === d2.bark); // true  —— 原型上共享 // [!code highlight]
+console.log(d1.run === d2.run); // false —— 实例属性，各有一份 // [!code highlight]
+```
+
+class field 中的 `run = () => {}` 本质上等价于：
+
+```typescript
+class Dog {
+  constructor() {
+    this.run = () => {
+      console.log(this.name);
+    };
+  }
+}
+```
+
+**写在 `constructor` 里的东西都挂在实例身上，不会共享到原型上。**
+
+## 三个高频面试题，用原型链秒答
+
+### `instanceof` 是怎么判断的？
+
+```typescript
+d instanceof Dog; // true
+d instanceof Animal; // true
+d instanceof Object; // true
+```
+
+它做的事：**沿着 `d.__proto__` 一路往上爬，看能不能找到 `Dog.prototype`（或 `Animal.prototype`、`Object.prototype`）**。找到了就返回 `true`。
+
+### `hasOwnProperty` 有什么用？
+
+```typescript
+const d = new Dog("大黄");
+
+console.log(d.hasOwnProperty("name")); // true  —— name 是自己的 // [!code highlight]
+console.log(d.hasOwnProperty("bark")); // false —— bark 在原型上 // [!code highlight]
+```
+
+遍历对象时常用它来过滤掉原型上的方法：
+
+```typescript
+for (const key in d) {
+  if (d.hasOwnProperty(key)) {
+    console.log(`自己的属性: ${key}`);
+  }
+}
+// 输出: "自己的属性: name"
+```
+
+### `Object.create(null)` 是什么意思？
+
+```typescript
+const pureObj = Object.create(null); // [!code highlight]
+pureObj.name = "pure";
+
+console.log(pureObj.toString); // undefined // [!code highlight]
+console.log(pureObj.__proto__); // undefined
+```
+
+创建一个**没有原型的纯字典对象**，连 `toString`、`hasOwnProperty` 都没有。适合当纯 key-value 映射用，不用担心原型属性污染。
+
+## 原型链简图
+
+::excalidraw[/src/assets/posts/js-prototype-chain.svg]
+
+总结：
+
+1. **原型的存在是为了共享方法，节省内存。** 方法放在 `prototype` 上，实例通过 `__proto__` 去找。
+2. **`prototype` 是函数创建的"模板仓库"，仓库内也有`__proto__`继续指向上层仓库，是对象查找的"路线图"。**
+3. **class 语法没有创造任何新东西，它只是原型机制的语法糖。** 理解了原型链，class 里的一切行为都有据可查。

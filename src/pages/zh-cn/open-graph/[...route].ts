@@ -4,7 +4,7 @@ import {
   BASE_COLOR,
   SITE_DESCRIPTION,
   SITE_TITLE,
-} from "../../config.ts";
+} from "../../../config.ts";
 import { getAllBlogPosts } from "src/utils";
 import colors from "tailwindcss/colors";
 

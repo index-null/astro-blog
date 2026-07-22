@@ -1,0 +1,85 @@
+---
+# ---- REQUIRED ----
+title: "The `new` Operator — How a Function Becomes an Object"
+description: "Breaking down the four-step internal process of the `new` operator, revealing that `class` is essentially syntactic sugar over `function` + prototype binding."
+pubDate: "Jun 22 2026"
+tags: ["JavaScript", "new", "class", "constructor"]
+lang: "en"
+
+# ---- OPTIONAL ----
+published: true
+---
+
+`new` is the most puzzling among the [four ways `this` can be invoked](./js-arrow-function-and-this-pointer). You write `new Dog()` and get an empty object — what actually happens in between?
+
+## Why can you `new` a `function`?
+
+```typescript
+function Dog(name: string) {
+  // [!code highlight]
+  this.name = name; // [!code highlight]
+}
+```
+
+`new Dog("大黄")` does the following:
+
+1. **Creates an empty object**, pointing its `__proto__` to `Dog.prototype` (see the guide at the end of this post for prototype chain details)
+2. **Binds `this` to this empty object**, then executes the constructor body
+3. `this.xxx = ...` inside the constructor gets attached to this object
+4. **Returns this object** (if the constructor doesn't explicitly return an object)
+
+## `class` is syntactic sugar
+
+```typescript
+// class syntax:
+class Dog {
+  // [!code highlight]
+  name: string;
+  constructor(name: string) {
+    // [!code highlight]
+    this.name = name; // [!code highlight]
+  }
+  bark() {
+    console.log(`${this.name}: woof!`);
+  }
+}
+
+// Equivalent prototype syntax:
+function Dog(this: any, name: string) {
+  // [!code highlight]
+  this.name = name; // [!code highlight]
+}
+Dog.prototype.bark = function () {
+  // [!code highlight]
+  console.log(`${this.name}: woof!`);
+};
+```
+
+Verifying that `class` is indeed a function:
+
+```typescript
+console.log(typeof Dog); // "function" — class is just function  // [!code highlight]
+const d = new Dog("大黄");
+console.log(d.bark === Dog.prototype.bark); // true — methods live on the prototype  // [!code highlight]
+```
+
+This also explains why arrow functions as class fields aren't shared:
+
+```typescript
+class Dog {
+  bark() {} // → Dog.prototype.bark (shared by all instances)  // [!code highlight]
+  run = () => {}; // → this.run = () => {} (each instance gets its own copy)  // [!code highlight]
+}
+```
+
+`run = () => {}` is equivalent to defining a regular property — written as `this.run = () => {}` inside the `constructor`, attached to the instance, bypassing prototype sharing.
+
+## More
+
+`new` answers "where objects come from", but not "how methods on the prototype chain are found":
+
+- **What's the relationship between `__proto__` and `prototype`?**
+- **How does the prototype chain look up methods layer by layer?**
+- **How do `instanceof` and `hasOwnProperty` work under the hood?**
+
+Dive deeper here: [Prototype Chain — From `new` an Object to the Essence of Method Sharing](./js-prototype-chain)

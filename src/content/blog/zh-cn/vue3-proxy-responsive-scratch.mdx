@@ -1,0 +1,340 @@
+---
+# ---- REQUIRED ----
+title: "手写 Vue3 响应式 — 从零构建基于 Proxy 的响应式系统"
+description: "从零实现 Vue3 的 reactive() — 简明梳理 Proxy 拦截、依赖收集（track）、更新派发（trigger），以及 Reflect 与 effect 的边界处理。"
+pubDate: "Jul 09 2026"
+tags: ["vue3", "reactive", "proxy", "reactivity", "dependency tracking"]
+
+# ---- OPTIONAL ----
+published: true
+# hidden: false
+# shortDescription: ""
+# updatedDate: ""
+# heroImage: "/src/assets/posts/image.jpg"
+# hideHero: false
+# noImage: false
+# customOGImage: "/src/assets/posts/image.jpg"
+---
+
+在前端开发中，响应式变量只有一个简单的目的：**数据变了，UI 自动重新渲染。**
+
+本文以 Vue3 的 `reactive()` 为例，从零开始逐步将普通对象改造为响应式对象。
+
+## 一个简单的渲染设置
+
+先来看最基础的页面渲染：
+
+```html
+<body>
+  <div id="age"></div>
+  <div id="name"></div>
+  <div id="console" style="color: red"></div>
+  <script>
+    function appendToConsole(msg) {
+      document.getElementById("console").innerHTML += msg + "<br>";
+    }
+    function renderName() {
+      appendToConsole("rendering name...");
+      document.getElementById("name").innerHTML = profile.name;
+    }
+    function renderAge() {
+      appendToConsole("rendering age...");
+      document.getElementById("age").innerHTML = profile.age;
+    }
+    const profile = { age: 13, name: "John" };
+
+    renderAge();
+    renderName();
+  </script>
+</body>
+```
+
+如果之后修改 `profile.age = 18` 想让 UI 随之更新，就必须手动再调一次 `renderAge()`。当管理对象越来越多、依赖关系越来越复杂（比如总分依赖各科分数），手动维护会非常头疼。
+
+**我们急需一种更强的变量类型：当它被修改时，自动通知依赖它的各个函数并重新执行。**
+
+## Vue3 的 `reactive()` 长什么样
+
+Vue3 让它变得极其简单：
+
+```js
+import { reactive } from "vue";
+
+// profile 经 reactive 增强后 — 它是一个响应式对象
+const profile = reactive({ age: 13, name: "John" });
+renderAge();
+
+// 这行之后，页面上的 age 自动更新为 18
+profile.age = 18; // [!code highlight]
+```
+
+下面尝试自己实现 `reactive()`。
+
+## 用 Proxy 拦截对象的读写
+
+要在变化时通知依赖方，首先得拦截对象修改。`Proxy` 正是合适的选择。
+
+`Proxy` 基本用法：`new Proxy(target, handler)`，其中 `handler` 定义 `get()` 和 `set()` — 对代理对象的所有读写都会被拦截。
+
+```js
+const obj = { name: "John" };
+const proxy = new Proxy(obj, {
+  get(target, key) {
+    return target[key];
+  },
+  set(target, key, value) {
+    target[key] = value;
+    return true; // 表示成功
+  },
+});
+```
+
+用它对 `profile` 的读写进行监听：
+
+```js
+const profile = { age: 13, name: "John" };
+const reactiveProfile = new Proxy(profile, {
+  get(target, key) {
+    appendToConsole(`read ${String(key)}, value: ${target[key]}`);
+    return target[key];
+  },
+  set(target, key, value) {
+    appendToConsole(`set ${String(key)}: ${target[key]} → ${value}`);
+    target[key] = value;
+    return true;
+  },
+});
+```
+
+现在修改 `reactiveProfile` 就能看到变更日志了。但光知道发生了什么还不够 — 还得知道**通知谁**。
+
+## 谁依赖了 `profile`？
+
+思路很直接：每次 `get` 时，记录当前正在读取该属性的函数（依赖方）。为此需要：
+
+- 一个**全局变量** `currentFunc` 来追踪当前正在执行的依赖函数
+- 一个**包装器** `wrapFunc`，在执行依赖函数之前设置好 `currentFunc`
+
+```js
+let currentFunc = null; // [!code highlight]
+const dependenciesMap = {}; // [!code highlight]
+
+function wrapFunc(func) {
+  return function () {
+    currentFunc = func; // 执行前标记 "我是谁"
+    func();
+    currentFunc = null; // 执行后清除
+  };
+}
+```
+
+有了这些基础设施，就可以在 `get` 陷阱中记录依赖了：
+
+```js
+get(target, key) {
+  if (currentFunc) {
+    if (!dependenciesMap[key]) {
+      dependenciesMap[key] = new Set();
+    }
+    dependenciesMap[key].add(currentFunc); // [!code highlight] 记录依赖
+  }
+  return target[key];
+}
+```
+
+`set` 陷阱中则遍历所有依赖方并重新执行：
+
+```js
+set(target, key, value) {
+  target[key] = value;
+  const deps = dependenciesMap[key];
+  if (deps) {
+    deps.forEach((func) => func()); // [!code highlight] 通知所有依赖方
+  }
+  return true;
+}
+```
+
+## 最终 `reactive()` 实现
+
+合在一起：
+
+```js
+let currentFunc = null;
+const dependenciesMap = {};
+
+function wrapFunc(func) {
+  return function () {
+    currentFunc = func;
+    func();
+    currentFunc = null;
+  };
+}
+
+function track(target, key) {
+  if (currentFunc) {
+    if (!dependenciesMap[key]) {
+      dependenciesMap[key] = new Set();
+    }
+    dependenciesMap[key].add(currentFunc);
+  }
+}
+
+function trigger(target, key) {
+  const deps = dependenciesMap[key];
+  if (deps) {
+    deps.forEach((func) => func());
+  }
+}
+
+function reactive(obj) {
+  return new Proxy(obj, {
+    get(target, key) {
+      track(target, key);
+      return target[key];
+    },
+    set(target, key, value) {
+      target[key] = value;
+      trigger(target, key);
+      return true;
+    },
+  });
+}
+```
+
+用我们自己的 `reactive()` 改写最初的例子：
+
+```js
+const profile = reactive({ age: 13, name: "John" });
+
+renderAge = wrapFunc(renderAge);
+renderName = wrapFunc(renderName);
+
+renderAge(); // 首次渲染 — age get 触发，renderAge 被记录为 age 的依赖方
+renderName(); // name 同理
+
+profile.age = 18; // age set 触发，renderAge 自动重新执行 // [!code highlight]
+```
+
+无论何时修改 `profile.age`，`renderAge` 都会自动重新执行、UI 随之更新 — 这便是 Vue3 `reactive()` 的核心原理。
+
+## 补充一：用 Reflect 处理 `this`
+
+直接使用 `target[key]` 大多数情况下没问题。但如果对象有 getter/setter 或原型链属性，`this` 可能指向原始对象而非代理对象，导致依赖追踪丢失。
+
+举个例子：
+
+```js
+const obj = {
+  _name: "John",
+  get name() {
+    return this._name; // this 指向谁？
+  },
+};
+
+const proxy = new Proxy(obj, {
+  get(target, key) {
+    console.log("get:", key);
+    return target[key]; // 直接读原始对象
+  },
+});
+
+console.log(proxy.name);
+```
+
+输出：
+
+```txt
+get: name
+```
+
+注意：读取 `_name` 时**并没有**触发 `get` 陷阱！因为 getter 内部的 `this` 指向的是 `obj`（原始对象），而不是 `proxy`。换句话说，如果 `_name` 变了，依赖 `name` 的函数不会重新渲染。
+
+将 `target[key]` 替换为 `Reflect.get(target, key, receiver)`。`receiver` 就是代理对象自身，这样 getter 内部的 `this` 就能正确指向代理对象，`_name` 的读取也会被拦截。
+
+```js
+function reactive(obj) {
+  return new Proxy(obj, {
+    get(target, key, receiver) {
+      track(target, key);
+      return Reflect.get(target, key, receiver); // [!code highlight]
+    },
+    set(target, key, value, receiver) {
+      const result = Reflect.set(target, key, value, receiver); // [!code highlight]
+      trigger(target, key);
+      return result;
+    },
+  });
+}
+```
+
+`receiver` 参数就是代理对象自身，配合 `Reflect` 确保 getter/setter 内部的 `this` 始终指向代理 — 不会遗漏依赖追踪。
+
+## 补充二：`wrapFunc` → `effect`，自动执行
+
+之前的 `wrapFunc` 需要手动首次调用来注册依赖 — 略显啰嗦。Vue3 里对应的概念叫 `effect`，包装后**立即自动执行一次**，省去手动首次调用：
+
+```js
+function effect(fn) {
+  const wrapped = () => {
+    currentFunc = wrapped;
+    fn();
+    currentFunc = null;
+  };
+  wrapped(); // [!code highlight] 立即执行，自动收集依赖
+}
+```
+
+有了 `effect`，示例更加干净：
+
+```js
+const profile = reactive({ age: 13, name: "John" });
+
+effect(renderAge); // 自动执行一次，顺手完成依赖收集
+effect(renderName); // 同理
+
+profile.age = 18; // 自动触发 renderAge 重新执行 // [!code highlight]
+```
+
+不再需要手动 `renderAge()` 或 `renderName()`。干净利落。
+
+## 补充三：用 WeakMap 扩展到多个对象
+
+我们当前 `dependenciesMap = {}` 只能管一个响应式对象。试试建两个：
+
+```js
+const profile = reactive({ age: 13 });
+const settings = reactive({ age: 99 }); // 两个对象共享同一个 key "age"！
+```
+
+两个对象在 `dependenciesMap` 中共用同一个扁平 key `"age"`，导致依赖方乱套 — 修改 `profile.age` 会错误触发 `settings` 的依赖方。
+
+Vue3 用 **`WeakMap`** 来解决 — 以原始目标对象为 key 建立依赖图：
+
+```js
+const targetMap = new WeakMap(); // [!code highlight]
+
+function track(target, key) {
+  if (!currentFunc) return;
+  let depsMap = targetMap.get(target); // [!code highlight]
+  if (!depsMap) {
+    targetMap.set(target, (depsMap = new Map())); // [!code highlight]
+  }
+  let deps = depsMap.get(key);
+  if (!deps) {
+    depsMap.set(key, (deps = new Set()));
+  }
+  deps.add(currentFunc);
+}
+
+function trigger(target, key) {
+  const depsMap = targetMap.get(target); // [!code highlight]
+  if (!depsMap) return;
+  const deps = depsMap.get(key);
+  if (deps) {
+    deps.forEach((func) => func());
+  }
+}
+```
+
+现在每个响应式对象都有自己隔离的 `depsMap`。为什么是 `WeakMap` 而不是 `Map`？当响应式对象在任何地方都不再被引用时，它在 `WeakMap` 中的条目会被自动垃圾回收 — 无需手动清理，没有内存泄漏。这就是 Vue3 内部响应式系统底层所做的。

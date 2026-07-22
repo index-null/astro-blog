@@ -1,0 +1,53 @@
+---
+title: "Master call, apply, bind in Three Sentences"
+description: "call passes args with commas, apply passes args as an array, bind does not execute immediately. A crisp cheat sheet for the three hard-binding methods."
+pubDate: "Jun 22 2026"
+tags: ["JavaScript", "this", "call", "apply", "bind"]
+lang: "en"
+published: true
+---
+
+All three methods do the same thing: **forcibly bind a function's `this` to a value you specify.** They differ only in argument style and execution timing.
+
+## `call` — executes immediately, comma-separated arguments
+
+```typescript
+fn.call(thisArg, arg1, arg2, arg3); // [!code highlight]
+```
+
+```typescript
+function greet(greeting, punctuation) {
+  console.log(`${greeting}, ${this.name}${punctuation}`);
+}
+
+const user = { name: "Alice" };
+greet.call(user, "Hello", "!"); // "Hello, Alice!" // [!code highlight]
+```
+
+## `apply` — executes immediately, arguments in an array
+
+The only difference from `call` is that arguments go inside an array:
+
+```typescript
+fn.apply(thisArg, [arg1, arg2, arg3]); // [!code highlight]
+
+greet.apply(user, ["Hi", "?"]); // "Hi, Alice?" // [!code highlight]
+```
+
+**Which one to choose?** Arguments already in an array → `apply`; scattered arguments → `call`. They are functionally equivalent.
+
+## `bind` — does NOT execute, returns a new function with `this` locked in
+
+```typescript
+const boundFn = fn.bind(thisArg, arg1, arg2); // [!code highlight]
+//              Doesn't execute! Returns a new function with this permanently bound
+```
+
+```typescript
+const greetAlice = greet.bind(user, "Hey"); // [!code highlight]
+greetAlice("!!"); // "Hey, Alice!!"
+```
+
+`bind` does not mutate the original function — it **produces a new function whose `this` is locked forever.** Typical use cases: callbacks, event handlers.
+
+> Arrow functions have no own `this`, so these three methods have no effect on them. See [Arrow Functions and `this`](./js-arrow-function-and-this-pointer) for details.

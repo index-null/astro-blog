@@ -1,0 +1,207 @@
+---
+# ---- REQUIRED ----
+title: "Arrow Functions and `this` — From First Principles to Practice"
+description: "Stop memorizing rules. Starting from what `this` really means, we break down the four invocation patterns, the classic `this`-loss pitfall in classes, the essence of arrow functions, and when you should—and shouldn't—use them."
+pubDate: "Jun 21 2026"
+tags: ["JavaScript", "TypeScript", "arrow-function", "this"]
+lang: "en"
+
+# ---- OPTIONAL ----
+published: true
+# hidden: false
+# shortDescription: ""
+# updatedDate: ""
+# heroImage: "/src/assets/posts/image.jpg"
+# hideHero: false
+# noImage: false
+# customOGImage: "/src/assets/posts/image.jpg"
+---
+
+Nearly every JS/TS developer has fallen into this trap. Memorizing rules like "arrow functions lock `this`" won't stick. Instead of starting from conclusions, let's begin at the root: **what `this` actually is**.
+
+## `this` Isn't "Myself" — It's "Who Called Me"
+
+It's easy to assume `this` points to the current object. But in JS, there's really only one core rule:
+
+> **The value of `this` depends on what's before the dot `.` at the moment the function is called.**
+
+```typescript
+const obj = {
+  name: "Alice",
+  sayName() {
+    console.log(this.name);
+  },
+};
+
+obj.sayName(); // "Alice" — dot is before obj, so this = obj // [!code highlight]
+```
+
+Same function, different invocation — `this` changes:
+
+```typescript
+const fn = obj.sayName;
+fn(); // undefined (strict mode) or window (non-strict) // [!code highlight]
+//     ↑ nothing before the dot — this is lost
+```
+
+**So: `this` is not determined by where the function is defined, but by how it's called.** This is the root cause of all confusion around `this`.
+
+## The Four Faces of `this`
+
+Whenever you run into a `this` problem, come back to this table:
+
+| Invocation Pattern | Code | `this` Is? |
+| ------------------ | -------------------------------------------- | ------------------------------------------------- |
+| Method call | `obj.foo()` | `obj` (whatever's before the dot) |
+| Bare function call | `foo()` | `undefined` (strict) / `window` (non-strict) |
+| `new` call | `new Foo()` | The newly created empty object |
+| Hard binding | `foo.call(x)`, `foo.apply(x)`, `foo.bind(x)` | Whatever `x` you passed |
+
+Let's see it in code:
+
+```typescript
+function showThis() {
+  console.log(this);
+}
+
+const obj = { name: "obj", showThis };
+
+// Pattern 1: Method call
+obj.showThis(); // → { name: "obj", showThis: ... }  this = obj // [!code highlight]
+
+// Pattern 2: Bare function call
+const fn = obj.showThis;
+fn(); // → undefined (strict mode) // [!code highlight]
+
+// Pattern 3: new call — creates a new object {}, this points to it, then runs showThis as constructor
+new showThis(); // → showThis {} (an empty object) // [!code highlight]
+
+// Pattern 4: Hard binding
+showThis.call("hello"); // → "hello"
+showThis.apply(42); // → 42
+const bound = showThis.bind("I am bound");
+bound(); // → "I am bound"
+```
+
+> For what exactly happens with `new`, see my other article → [new Call — How a Function Becomes an Object](./new-call-to-create-object)
+
+> For a quick primer on `call` / `apply` / `bind` → [Remember call, apply, bind in Three Sentences](./this-pointer-bind-three-methods)
+
+Same function `showThis` — `this` is different each time. So the phrase "`this` points to the current object" is wrong from the start.
+
+**In fact — `this` points to the caller, not the definer.**
+
+## The Classic `this` Loss Pitfall in Class Methods
+
+Back to classes:
+
+```typescript
+class Counter {
+  count = 0;
+
+  increment() {
+    this.count++; // What is `this` here? Check the call site!
+    console.log(this.count);
+  }
+}
+
+const c = new Counter();
+c.increment(); // Method call — instance `c` calls it, so this = c; instance count goes from 0 to 1 // [!code highlight]
+```
+
+But if you pass the method to something else:
+
+```typescript
+const fn = c.increment; // Extract the method
+fn(); //  this.count is NaN!
+// Nothing before the dot on fn — this is undefined
+```
+
+**Typical callback scenarios:**
+
+```typescript
+// Note: the method is being passed! It looks like c.increment, but when actually called, there's nothing before the dot!
+<button onClick={c.increment}>+1</button> // [!code highlight]
+
+// On click, this = undefined — this.count throws
+
+// Same issue with setTimeout:
+setTimeout(c.increment, 1000);
+```
+
+## Arrow Functions Have No `this` of Their Own
+
+This is where arrow functions reveal their purpose:
+
+> **Arrow functions don't have their own `this`. When you access `this`, it looks outward and grabs whatever it finds.**
+
+But what exactly is "outward"? Class field initializers are essentially equivalent to being written inside the constructor:
+
+```typescript
+class Counter {
+  count = 0;
+
+  increment = () => {
+    // [!code highlight]
+    console.log(this);
+  };
+}
+
+// Equivalent to:
+class Counter {
+  constructor() {
+    this.count = 0;
+    this.increment = () => {
+      console.log(this);
+    }; // i.e., the instance created by `new`
+  }
+}
+```
+
+It captures the `this` from the constructor — the instance created by `new`.
+
+So arrow functions aren't created when the class is declared — they're created **each time `new Counter()` runs the constructor**. At that moment, the outer `this` = the new instance, and the arrow function captures it.
+
+**A regular function asks "Who is calling me?" An arrow function asks "Where was I created?"**
+
+Compare:
+
+```typescript
+class Demo {
+  name = "Demo";
+
+  // Regular method
+  normalMethod() {
+    console.log("normal:", this?.name);
+  }
+
+  // Arrow property
+  arrowMethod = () => {
+    console.log("arrow:", this?.name);
+  };
+}
+
+const d = new Demo();
+
+// Scenario 1: Direct call — both work fine
+d.normalMethod(); // "normal: Demo"
+d.arrowMethod(); // "arrow: Demo"
+
+// Scenario 2: Extract the methods
+const normal = d.normalMethod;
+const arrow = d.arrowMethod;
+
+normal(); // "normal: undefined" — this is lost // [!code highlight]
+arrow(); // "arrow: Demo"       — this is locked in // [!code highlight]
+
+// Scenario 3: As callbacks
+setTimeout(d.normalMethod, 100); // — this is lost // [!code highlight]
+setTimeout(d.arrowMethod, 100); // — works fine // [!code highlight]
+```
+
+## So When Should You Use Arrow Functions?
+
+A simple heuristic: Will your function be passed elsewhere to be called?
+
+- **No**: A regular method is fine — more memory-efficient since the method is shared on the prototype.
+- **Yes**: Use an arrow function — `this` is bound to the instance itself, at the cost of each instance owning its own copy.

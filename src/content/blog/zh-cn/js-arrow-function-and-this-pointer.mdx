@@ -1,0 +1,207 @@
+---
+# ---- REQUIRED ----
+title: "箭头函数与 this 指针 —— 从根源到实践"
+description: "不再靠背八股，从 this 的真正含义出发，逐层拆解四种调用方式、class 里丢 this 的经典坑、箭头函数的本质，以及什么时候该用 / 不该用箭头函数。"
+pubDate: "Jun 21 2026"
+tags: ["JavaScript", "TypeScript", "arrow-function", "this"]
+lang: "zh-cn"
+
+# ---- OPTIONAL ----
+published: true
+# hidden: false
+# shortDescription: ""
+# updatedDate: ""
+# heroImage: "/src/assets/posts/image.jpg"
+# hideHero: false
+# noImage: false
+# customOGImage: "/src/assets/posts/image.jpg"
+---
+
+这个坑几乎是每个 JS/TS 开发者都会掉进去的，而且"箭头函数锁 this"这类八股背了也会忘。咱们不从结论出发，从**根源 —— `this` 到底是什么**讲起。
+
+## `this` 不是"我自己"，是"谁在调我"
+
+我们很容易有一种"this 指向当前对象"的直觉。JS 里 `this` 只有一个核心规则：
+
+> **`this` 的值，取决于函数被调用的那一刻，点 `.` 前面是谁。**
+
+```typescript
+const obj = {
+  name: "Alice",
+  sayName() {
+    console.log(this.name);
+  },
+};
+
+obj.sayName(); // "Alice"  —— 点前面是 obj，所以 this = obj // [!code highlight]
+```
+
+同一个函数，换个调用方式，`this` 就变了：
+
+```typescript
+const fn = obj.sayName;
+fn(); // undefined（严格模式）或 window（非严格模式） // [!code highlight]
+//     ↑ 点前面什么都没有，this 就丢了
+```
+
+**所以：`this` 不是"函数定义在哪里"决定的，是"函数怎么被调用"决定的。** 这是所有有关this指向理解不清晰的根源。
+
+## 四种 `this`
+
+每次遇到 this 问题，回来查这张表就行：
+
+| 调用方式   | 代码                                         | `this` 是？                                 |
+| ---------- | -------------------------------------------- | ------------------------------------------- |
+| 方法调用   | `obj.foo()`                                  | `obj`（点前面的那个东西）                   |
+| 裸函数调用 | `foo()`                                      | `undefined`（严格模式）/ `window`（非严格） |
+| `new` 调用 | `new Foo()`                                  | 新创建的那个空对象                          |
+| 硬绑定     | `foo.call(x)`, `foo.apply(x)`, `foo.bind(x)` | 你传的 `x`                                  |
+
+用代码感受一下：
+
+```typescript
+function showThis() {
+  console.log(this);
+}
+
+const obj = { name: "obj", showThis };
+
+// 方式一：方法调用
+obj.showThis(); // → { name: "obj", showThis: ... }  this = obj // [!code highlight]
+
+// 方式二：裸函数调用
+const fn = obj.showThis;
+fn(); // → undefined（严格模式） // [!code highlight]
+
+// 方式三：new 调用, 本质是创建一个新对象{}，this指向它，然后执行showThis作为构造函数
+new showThis(); // → showThis {}（一个空对象） // [!code highlight]
+
+// 方式四：硬绑定
+showThis.call("hello"); // → "hello"
+showThis.apply(42); // → 42
+const bound = showThis.bind("I am bound");
+bound(); // → "I am bound"
+```
+
+> 具体 `new` 发生了什么，我在另一篇文章有介绍→ [new 调用 —— 一个函数是怎么变成对象的](./new-call-to-create-object)
+
+> 关于 `call` / `apply` / `bind` 的用法，这里有一个速通版本→ [三句话记住 call、apply、bind](./this-pointer-bind-three-methods)
+
+同一个函数 `showThis`，`this` 四次都不一样。 所以"this 指向当前对象"这句话从头就是错的。
+
+**事实上 —— this 指向调用者，不是定义者。**
+
+## 类方法`this`丢失的坑
+
+回到 class：
+
+```typescript
+class Counter {
+  count = 0;
+
+  increment() {
+    this.count++; // 这里的 this 是谁？看调用！
+    console.log(this.count);
+  }
+}
+
+const c = new Counter();
+c.increment(); // 方法调用，c这个实例调用，所以this = c，c的实例属性从0增加到1 // [!code highlight]
+```
+
+但如果把方法传递给别的东西调用：
+
+```typescript
+const fn = c.increment; // 把方法取出来
+fn(); //  this.count is NaN！
+// fn 前面没有 . ，this 就是 undefined
+```
+
+**回调函数的典型场景：**
+
+```typescript
+// 注意这里方法被传递了！看起来是c.increment,但是实际这个函数被调用时，点前面没东西了！
+<button onClick={c.increment}>+1</button> // [!code highlight]
+
+// 点击时 this = undefined，this.count 报错
+
+// 同理，setTimeout 也一样存在这个问题：
+setTimeout(c.increment, 1000);
+```
+
+## 箭头函数没有自己的 `this`
+
+到这里，箭头函数的意义就出来了：
+
+> **箭头函数没有自己的 `this`。你用 `this`，它就去外面找，找到谁就是谁。**
+
+但"外面"到底是哪？class field 初始化器本质上等价于写在 constructor 里：
+
+```typescript
+class Counter {
+  count = 0;
+
+  increment = () => {
+    // [!code highlight]
+    console.log(this);
+  };
+}
+
+// 等价于：
+class Counter {
+  constructor() {
+    this.count = 0;
+    this.increment = () => {
+      console.log(this);
+    }; // 也就是 new 出来的那个实例
+  }
+}
+```
+
+this 捕获的是 constructor 里的 this, 也就是 new 出来的那个实例
+
+所以箭头函数不是 class 声明时创建的，是**每次 `new Counter()` 构造函数执行时才创建的**。此时外层 `this` = 新实例，箭头函数顺势捕获了它。
+
+**普通函数问"谁在调我？"，箭头函数问"我是在哪创建的？"**
+
+对比一下：
+
+```typescript
+class Demo {
+  name = "Demo";
+
+  // 普通方法
+  normalMethod() {
+    console.log("normal:", this?.name);
+  }
+
+  // 箭头属性
+  arrowMethod = () => {
+    console.log("arrow:", this?.name);
+  };
+}
+
+const d = new Demo();
+
+// 场景一：直接调用，两个都正常
+d.normalMethod(); // "normal: Demo"
+d.arrowMethod(); // "arrow: Demo"
+
+// 场景二：把方法摘出来
+const normal = d.normalMethod;
+const arrow = d.arrowMethod;
+
+normal(); // "normal: undefined" — this 丢了 // [!code highlight]
+arrow(); // "arrow: Demo"       — this 锁死了 // [!code highlight]
+
+// 场景三：作为回调
+setTimeout(d.normalMethod, 100); // — this 丢了 // [!code highlight]
+setTimeout(d.arrowMethod, 100); // — 正常 // [!code highlight]
+```
+
+## 所以什么时候用箭头函数？
+
+简单判断：你的函数会传给别的地方调用吗？
+
+- **不会**：普通方法就够了，更省内存，方法在原型上共享。
+- **会**：用箭头函数，`this` 绑定到实例本身，每个实例独享一份箭头函数。

@@ -1,0 +1,95 @@
+---
+# ---- REQUIRED ----
+title: "手写 JS 数组核心方法"
+description: "从原型链挂载角度手写实现 JavaScript 数组核心方法 — forEach、map、filter、reduce。"
+pubDate: "Jun 09 2026"
+tags: ["JavaScript", "Array", "Implementation"]
+# ---- OPTIONAL ----
+published: true
+# hidden: false
+# shortDescription: ""
+# updatedDate: ""
+# heroImage: "/src/assets/posts/image.jpg"
+# hideHero: false
+# noImage: false
+# customOGImage: "/src/assets/posts/image.jpg"
+---
+
+## forEach
+
+对数组的每个元素执行一次提供的回调。
+
+`arr.forEach(callback(element, index, array), thisArg)`
+
+```js
+Array.prototype.myForEach = function (callback, thisArg) {
+  for (let i = 0; i < this.length; i++) {
+    callback.call(thisArg, this[i], i, this);
+  }
+};
+```
+
+直接遍历；关键细节是通过 `call()` 绑定 `thisArg`。
+
+## map
+
+返回一个新数组，其元素为原数组每个元素经回调处理后的结果。
+
+`arr.map(callback(element, index, array), thisArg)`
+
+```js
+Array.prototype.myMap = function (callback, thisArg) {
+  const result = new Array(this.length);
+  for (let i = 0; i < this.length; i++) {
+    result[i] = callback.call(thisArg, this[i], i, this);
+  }
+  return result;
+};
+```
+
+预分配等长数组，遍历映射填充。
+
+## filter
+
+返回一个新数组，包含所有通过回调测试的元素。
+
+`arr.filter(callback(element, index, array), thisArg)`
+
+```js
+Array.prototype.myFilter = function (callback, thisArg) {
+  const result = [];
+  for (let i = 0; i < this.length; i++) {
+    if (callback.call(thisArg, this[i], i, this)) {
+      result.push(this[i]);
+    }
+  }
+  return result;
+};
+```
+
+遍历并按条件收集，仅将满足断言的元素推入结果。
+
+## reduce
+
+对每个元素执行归约函数，最终汇聚为单一输出值。
+
+`arr.reduce(callback(accumulator, currentValue, index, array), initialValue)`
+
+```js
+Array.prototype.myReduce = function (callback, initialValue) {
+  let acc, startIndex;
+  if (arguments.length >= 2) {
+    acc = initialValue;
+    startIndex = 0;
+  } else {
+    acc = this[0];
+    startIndex = 1;
+  }
+  for (let i = startIndex; i < this.length; i++) {
+    acc = callback(acc, this[i], i, this);
+  }
+  return acc;
+};
+```
+
+通过归约函数累积；`arguments.length` 用于区分「未传初始值」和显式传入 `undefined`。

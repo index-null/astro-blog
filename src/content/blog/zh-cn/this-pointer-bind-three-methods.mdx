@@ -1,0 +1,53 @@
+---
+title: "三句话记住 call、apply、bind"
+description: "call 逗号传参，apply 数组传参，bind 不立即执行。一句话速通三种硬绑定方法。"
+pubDate: "Jun 22 2026"
+tags: ["JavaScript", "this", "call", "apply", "bind"]
+lang: "zh-cn"
+published: true
+---
+
+三种方法都做同一件事：**强行把函数的 `this` 绑定到你指定的值上。** 区别只在传参方式和执行时机。
+
+## `call`：立即执行，参数逗号分隔
+
+```typescript
+fn.call(thisArg, arg1, arg2, arg3); // [!code highlight]
+```
+
+```typescript
+function greet(greeting, punctuation) {
+  console.log(`${greeting}, ${this.name}${punctuation}`);
+}
+
+const user = { name: "Alice" };
+greet.call(user, "Hello", "!"); // "Hello, Alice!" // [!code highlight]
+```
+
+## `apply`：立即执行，参数打包成数组
+
+跟 `call` 唯一的区别是参数用数组传：
+
+```typescript
+fn.apply(thisArg, [arg1, arg2, arg3]); // [!code highlight]
+
+greet.apply(user, ["Hi", "?"]); // "Hi, Alice?" // [!code highlight]
+```
+
+**选谁？** 参数已经是数组 → `apply`；参数零散 → `call`。本质等价。
+
+## `bind`：不执行，返回一个锁死 `this` 的新函数
+
+```typescript
+const boundFn = fn.bind(thisArg, arg1, arg2); // [!code highlight]
+//              不执行！返回新函数，this 永久锁死
+```
+
+```typescript
+const greetAlice = greet.bind(user, "Hey"); // [!code highlight]
+greetAlice("!!"); // "Hey, Alice!!"
+```
+
+`bind` 不改变原函数，而是**生产一个 `this` 被锁死的新函数**。典型场景：回调、事件处理器。
+
+> 箭头函数没有自己的 `this`，所以这三个方法对它无效。详见 [箭头函数与 this 指针](./js-arrow-function-and-this-pointer)

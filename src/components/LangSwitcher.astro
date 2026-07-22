@@ -1,0 +1,54 @@
+---
+import type { HTMLAttributes } from "astro/types";
+import { getLangFromUrl, getOppositeLocale } from "../i18n/utils";
+import { LOCALE_LABELS, DEFAULT_LOCALE } from "../i18n/config";
+
+export type Props = HTMLAttributes<"button">;
+
+const { class: className, ...props } = Astro.props;
+const currentLang = getLangFromUrl(Astro.url);
+const oppositeLang = getOppositeLocale(currentLang);
+---
+
+<button
+  id="lang-switcher-btn"
+  class:list={[
+    "flex items-center justify-center gap-1 text-sm font-medium text-base-950 hover:text-base-600 dark:text-base-50 dark:hover:text-base-400 transition-colors",
+    className,
+  ]}
+  data-current-lang={currentLang}
+  data-opposite-lang={oppositeLang}
+  data-default-locale={DEFAULT_LOCALE}
+  {...props}
+>
+  <span class="sr-only">Switch language to {LOCALE_LABELS[oppositeLang]}</span>
+  <span>{LOCALE_LABELS[oppositeLang]}</span>
+</button>
+
+<noscript>
+  <style>
+    #lang-switcher-btn { display: none; }
+  </style>
+</noscript>
+
+<script>
+  const btn = document.getElementById("lang-switcher-btn");
+  if (btn) {
+    btn.addEventListener("click", () => {
+      const target = btn.dataset.oppositeLang!;
+      const defaultLocale = btn.dataset.defaultLocale!;
+      const currentLang = btn.dataset.currentLang!;
+
+      const segments = window.location.pathname.split("/").filter(Boolean);
+      if (segments[0] === currentLang) segments.shift();
+
+      const cleanPath = "/" + segments.join("/");
+      const url =
+        target === defaultLocale
+          ? cleanPath || "/"
+          : `/${target}${cleanPath === "/" ? "" : cleanPath}`;
+
+      window.open(url, "_blank");
+    });
+  }
+</script>

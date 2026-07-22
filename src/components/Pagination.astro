@@ -1,5 +1,5 @@
 ---
-import { BASE } from "../config.ts";
+import { getLangFromUrl, getLocalizedPath } from "../i18n/utils";
 import PaginationNumber from "./PaginationNumber.astro";
 
 type Props = {
@@ -8,6 +8,7 @@ type Props = {
   tag?: string;
 };
 
+const lang = getLangFromUrl(Astro.url);
 const { total, current, tag } = Astro.props;
 const sanitizedTag = tag ? tag.split(" ").join("-") : undefined;
 
@@ -74,8 +75,8 @@ function getVisiblePages(total: number, current: number): Array<number | null> {
         <a
           href={
             sanitizedTag
-              ? BASE + "/tags/" + sanitizedTag + "/" + (current - 1)
-              : BASE + "/pages/" + (current - 1)
+              ? getLocalizedPath(lang, "/tags/" + sanitizedTag + "/" + (current - 1))
+              : getLocalizedPath(lang, "/pages/" + (current - 1))
           }
           aria-label="Previous page"
           class="inline-flex items-center border-t-2 border-transparent pr-1 pt-4 text-sm font-medium text-base-500 hover:border-base-300 hover:text-base-700 dark:text-base-400 dark:hover:border-base-700 dark:hover:text-base-300"
@@ -122,8 +123,8 @@ function getVisiblePages(total: number, current: number): Array<number | null> {
         <a
           href={
             sanitizedTag
-              ? BASE + "/tags/" + sanitizedTag + "/" + (current + 1)
-              : BASE + "/pages/" + (current + 1)
+              ? getLocalizedPath(lang, "/tags/" + sanitizedTag + "/" + (current + 1))
+              : getLocalizedPath(lang, "/pages/" + (current + 1))
           }
           aria-label="Next page"
           class="inline-flex items-center border-t-2 border-transparent pr-1 pt-4 text-sm font-medium text-base-500 hover:border-base-300 hover:text-base-700 dark:text-base-400 dark:hover:border-base-700 dark:hover:text-base-300"

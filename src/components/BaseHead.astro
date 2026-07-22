@@ -1,15 +1,18 @@
 ---
-import { BASE, SITE_FAVICON } from "../config.ts";
+import { BASE, SITE, SITE_FAVICON } from "../config.ts";
+import { LOCALES, LOCALE_HTML_LANG, type Locale } from "../i18n/config";
+import { getLocalizedPath } from "../i18n/utils";
 
 interface Props {
   title: string;
   description: string;
   image?: string;
+  lang?: Locale;
 }
 
 const canonicalURL = new URL(Astro.url.pathname, Astro.site);
 
-const { title, description, image = "main.png" } = Astro.props;
+const { title, description, image = "main.png", lang = "en" } = Astro.props;
 ---
 
 <!-- Global Metadata -->
@@ -26,6 +29,21 @@ const { title, description, image = "main.png" } = Astro.props;
 <!-- Canonical URL -->
 <link rel="canonical" href={canonicalURL} />
 
+<!-- hreflang alternate links -->
+{
+  LOCALES.map((locale) => {
+    const localizedPath = getLocalizedPath(locale, Astro.url.pathname);
+    return (
+      <link
+        rel="alternate"
+        hreflang={LOCALE_HTML_LANG[locale]}
+        href={new URL(localizedPath, SITE).href}
+      />
+    );
+  })
+}
+<link rel="alternate" hreflang="x-default" href={new URL(getLocalizedPath("en", Astro.url.pathname), SITE).href} />
+
 <!-- Primary Meta Tags -->
 <title>{title}</title>
 <meta name="title" content={title} />
@@ -36,9 +54,10 @@ const { title, description, image = "main.png" } = Astro.props;
 <meta property="og:url" content={Astro.url} />
 <meta property="og:title" content={title} />
 <meta property="og:description" content={description} />
+<meta property="og:locale" content={lang === "zh-cn" ? "zh_CN" : "en_US"} />
 <meta
   property="og:image"
-  content={new URL(BASE + "/open-graph/" + image, Astro.url)}
+  content={new URL(getLocalizedPath(lang, "/open-graph/" + image), Astro.url)}
 />
 
 <!-- Twitter -->
@@ -48,5 +67,5 @@ const { title, description, image = "main.png" } = Astro.props;
 <meta property="twitter:description" content={description} />
 <meta
   property="twitter:image"
-  content={new URL(BASE + "/open-graph/" + image, Astro.url)}
+  content={new URL(getLocalizedPath(lang, "/open-graph/" + image), Astro.url)}
 />

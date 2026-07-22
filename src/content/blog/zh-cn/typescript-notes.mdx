@@ -1,0 +1,351 @@
+---
+title: "TypeScript 笔记"
+description: "TypeScript 类型系统的一些笔记和技巧整理，包括泛型、类型收窄、infer、内置工具类型手写实现等。"
+pubDate: "Jul 21 2026"
+tags: ["typescript", "notes"]
+---
+
+> 最近整体梳理了一遍Typescript的一些语法和技巧，简以记录
+
+## type 与 interface 选型
+
+```ts
+// ---- type 更适合的场景 ----
+
+// 字面联合
+type Status = "idle" | "loading" | "success" | "error"; // [!code highlight]
+
+// 元组
+type Point2D = [number, number];
+
+// 函数类型
+type AsyncFetch = (url: string) => Promise<Response>;
+
+// 工具泛型
+type Nullable<T> = T | null; // [!code highlight]
+type ValueOf<T> = T[keyof T];
+
+// ---- interface 更适合的场景 ----
+
+// 业务实体
+interface User {
+  id: string;
+  name: string;
+  email: string;
+  avatar?: string;
+}
+
+// 接口入参 / 出参
+interface LoginRequest {
+  username: string;
+  password: string;
+}
+interface LoginResponse {
+  token: string;
+  user: User;
+}
+
+// 类约束
+interface Repository<T> {
+  findById(id: string): Promise<T | null>;
+  save(entity: T): Promise<void>;
+}
+
+class UserRepository implements Repository<User> {
+  async findById(id: string): Promise<User | null> {
+    /* ... */
+  }
+  async save(user: User): Promise<void> {
+    /* ... */
+  }
+}
+
+// 声明合并：第三方库扩展
+interface Window {
+  __INITIAL_STATE__: Record<string, unknown>; // [!code highlight]
+}
+
+// ---- 混合使用 ----
+type Geo = { lat: number; lng: number };
+
+interface Venue {
+  name: string;
+  location: Geo; // interface 字段复用 type
+}
+
+interface EnhancedVenue extends Venue, Geo {} // extends 复用 type
+```
+
+## as const 提取联合类型
+
+`as const` 将数组字面量收窄为只读元组，随后用索引访问 `[number]["path"]` 即可提取出所有路径的联合类型。
+
+```ts
+const ROUTES = [
+  { path: "/", title: "首页", auth: false },
+  { path: "/dashboard", title: "仪表盘", auth: true },
+  { path: "/admin", title: "管理后台", auth: true },
+] as const; // [!code highlight]
+
+// typeof ROUTES[number]["path"] → "/" | "/dashboard" | "/admin"
+type RoutePath = (typeof ROUTES)[number]["path"]; // [!code highlight]
+```
+
+## 函数泛型中 extends 的两种语义
+
+```ts
+function getProp<T extends object, K extends PropertyKey, D>( // [!code highlight]
+  obj: T,
+  key: K,
+  defaultValue: D,
+): K extends keyof T ? T[K] : D {
+  // [!code highlight]
+  // ...
+}
+```
+
+- 尖括号内 `extends`：泛型约束，要求 `T` 是 `object` 的子类型，`K` 是 `PropertyKey` 的子类型。
+- 返回值处 `extends`：条件类型，判断 `K` 是否为 `T` 的 key 之一。是则返回 `T[K]`，否则返回默认值类型 `D`。
+
+## 枚举
+
+```ts
+// 普通枚举：编译后生成对象，支持反向映射
+enum Color {
+  Red, // 0
+  Green, // 1
+  Blue, // 2
+}
+Color.Red; // 0
+Color[0]; // "Red"  -- 反向映射 // [!code highlight]
+Color[Color.Red]; // "Red"
+
+// 指定值
+enum HttpMethod {
+  GET = "GET",
+  POST = "POST",
+  PUT = "PUT",
+  DELETE = "DELETE",
+}
+
+// const enum：编译时直接内联，不生成对象的枚举可以使用
+const enum Direction {
+  // [!code highlight]
+  Up,
+  Down,
+  Left,
+  Right,
+}
+let dir = Direction.Up; // 编译后 → let dir = 0; // [!code highlight]
+// Direction[0]          // 报错，const enum 无反查
+```
+
+## 函数重载
+
+同一个函数对多种入参有不同处理时，需声明多个重载签名，配合实现签名内的类型收窄：
+
+```ts
+function sum(num: number, ...rest: number[]): number;
+function sum(nums: number[]): number;
+function sum(first: number | number[], ...rest: number[]): number {
+  const numList = Array.isArray(first) ? first : [first, ...rest]; // [!code highlight]
+  return numList.reduce((acc, cur) => acc + cur, 0);
+}
+```
+
+重载签名对外暴露精确类型，实现签名使用更宽的联合类型做内部收窄。注意实现签名对外不可见。
+
+## 联合类型收窄与 never 穷尽性检查
+
+```ts
+type Admin = { role: "admin"; permissions: string[]; level: number };
+type Member = { role: "member"; nickname: string; joinedAt: Date };
+type User = Admin | Member;
+
+function printUserRole(user: User): string {
+  switch (user.role) {
+    case "admin":
+      return `管理员 Lv${user.level}: 拥有${user.permissions.length}项权限`;
+    case "member":
+      return `成员 ${user.nickname}: 加入于${user.joinedAt.toLocaleString()}`;
+    default: {
+      // 编译时检查：若新增 variant 但未处理，此处类型不再是 never，编译报错
+      const _exhaustive: never = user; // [!code highlight]
+      throw new Error(`未处理的 role 类型: ${_exhaustive}`);
+    }
+  }
+}
+```
+
+`default` 分支中 `user` 被推断为 `never`，对其赋值可确保所有联合成员已被前面的分支穷尽处理。一旦新增成员而未补 case，此处会触发类型错误。
+
+## infer 模式匹配
+
+`infer` 在条件类型的 `extends` 子句中声明一个类型变量，用于捕获匹配位置的具体类型：
+
+```ts
+type MyAwaited<T> = T extends Promise<infer V> ? V : never; // [!code highlight]
+
+type MyParameters<T extends (...args: any) => any> = T extends (
+  ...args: infer P
+) => any
+  ? P
+  : never;
+
+type MyReturnType<T extends (...args: any) => any> = T extends (
+  ...args: any[]
+) => infer R
+  ? R
+  : never;
+```
+
+三个实例分别在内层 Promise、函数参数位、函数返回值位通过 `infer` 捕获对应类型。
+
+## Mapped Types 条件过滤与递归
+
+按 key 过滤属性，`never` 即删除该属性，下为仅保留符合V类型的那些字段
+
+```ts
+type PickByValue<T, V> = {
+  // [!code highlight]
+  [K in keyof T as T[K] extends V ? K : never]: T[K]; // [!code highlight]
+};
+```
+
+递归深度处理，以 `DeepPartial` 为例：
+
+```ts
+type DeepPartial<T> = // [!code highlight]
+  T extends Array<infer U>
+    ? Array<DeepPartial<U>> // 数组：递归处理元素
+    : T extends object
+      ? T extends (...args: any[]) => any
+        ? T // 函数：原样保留
+        : { [K in keyof T]?: DeepPartial<T[K]> } // 对象：递归处理每个属性
+      : T; // 原始类型：原样保留
+```
+
+看起来很吓人，实际上就三层：先看是不是数组，如果是就对每个元素递归处理；再看是不是函数，函数直接保留；最后如果是对象，递归对每一个属性处理；
+停止条件就是基础类型，原样保留
+
+## 内置工具类型手写实现
+
+```ts
+// 全部变成可选
+type MyPartial<T> = {
+  [K in keyof T]?: T[K]; // [!code highlight]
+};
+// 全部必选
+type MyRequired<T> = {
+  [K in keyof T]-?: T[K];
+};
+//全部只读
+type MyReadonly<T> = {
+  readonly [K in keyof T]: T[K];
+};
+//保留指定key
+type MyPick<T, K extends keyof T> = {
+  [P in K]: T[P]; // [!code highlight]
+};
+//忽略指定key
+type MyOmit<T, K extends keyof T> = {
+  [P in keyof T as P extends K ? never : P]: T[P];
+};
+//类型的for循环语法糖
+type MyRecord<K extends PropertyKey, V> = {
+  [P in K]: V;
+};
+//联合类型排除
+type MyExclude<T, U> = T extends U ? never : T; // [!code highlight]
+//联合类型提取
+type MyExtract<T, U> = T extends U ? T : never;
+//联合类型去空
+type MyNonNullable<T> = T extends null | undefined ? never : T;
+//提取函数参数类型
+type MyParameters<T extends (...args: any) => any> = T extends (
+  ...args: infer P
+) => any
+  ? P
+  : never;
+//提取函数返回值类型
+type MyReturnType<T extends (...args: any) => any> = T extends (
+  ...args: any[]
+) => infer R
+  ? R
+  : never;
+
+// 特殊讲解: 从构造函数类型提取实例类型
+//
+// 前置知识：class 声明同时产生两种类型 ——
+//   Dog        → 实例类型，即 { name: string; bark(): void }
+//   typeof Dog → 构造函数类型，即 new () => Dog
+//
+// InstanceType 接收的是后者（带 new 签名的构造函数类型），
+// 所以传参时必须写 InstanceType<typeof Dog>，而非 InstanceType<Dog>。
+//
+// new (...args: any) => infer R 中的 new 就是构造签名的标志：
+// 它表示"可被 new 调用的函数，返回 R"。infer R 捕获 R 即得到实例类型。
+//
+// abstract new 用于兼容抽象类（不加则 typeof AbstractClass 不满足 new 约束）。
+type MyInstanceType<T extends abstract new (...args: any) => any> = // [!code highlight]
+  T extends abstract new (...args: any) => infer R ? R : any; // [!code highlight]
+```
+
+补充： 既然 `InstanceType<typeof Dog>` 返回的就是 Dog，直接写 Dog 不就行了？
+
+答：能写出类名 Dog 时确实不需要；但泛型/高阶函数里手上只有一个构造函数类型变量 T，
+无法直接引用类名，必须用 `InstanceType<T>` 反向解出实例类型：
+
+举个例子：
+
+```ts
+function createInstance<T extends abstract new (...args: any) => any>(
+  Ctor: T,
+): InstanceType<T> {
+  return new Ctor();
+}
+//
+// 这里 T 是构造函数类型，不能当实例类型用，InstanceType<T> 就是它的"实例解包器"。
+```
+
+核心技巧只有三个：`infer` 捕获、`as` 过滤、`extends` 分发。
+
+## 类泛型：分层约束
+
+类级泛型与成员方法级泛型分别定义，在事件发布-订阅模式中尤为典型。`Events` 在实例化时确定整体结构，`K` 在每个方法调用时确定具体事件名：
+
+```ts
+type BaseEvent = Record<string, any[]>;
+
+class EventEmitter<Events extends BaseEvent> {
+  // [!code highlight]
+  private handlers = new Map<keyof Events, ((...args: any[]) => void)[]>();
+
+  on<K extends keyof Events>( // [!code highlight]
+    key: K,
+    handler: (...args: Events[K]) => void,
+  ): void {
+    const list = this.handlers.get(key);
+    list ? list.push(handler) : this.handlers.set(key, [handler]);
+  }
+
+  emit<K extends keyof Events>(key: K, ...args: Events[K]): void {
+    this.handlers.get(key)?.forEach((fn) => fn(...args));
+  }
+
+  off<K extends keyof Events>(
+    key: K,
+    handler: (...args: Events[K]) => void,
+  ): void {
+    const list = this.handlers.get(key);
+    if (list) {
+      this.handlers.set(
+        key,
+        list.filter((fn) => fn !== handler),
+      );
+    }
+  }
+}
+```
+
+这样 `emit` 的参数类型完全由 `Events[K]` 推导，调用时每个事件获得精确的类型提示。

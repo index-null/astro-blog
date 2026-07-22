@@ -25,6 +25,14 @@ import ExcalidrawEmbed from "./src/embeds/excalidraw/embed";
 
 // https://astro.build/config
 export default defineConfig({
+  i18n: {
+    defaultLocale: "en",
+    locales: ["en", "zh-cn"],
+    routing: {
+      prefixDefaultLocale: false,
+    },
+  },
+
   vite: {
     resolve: {
       alias: {

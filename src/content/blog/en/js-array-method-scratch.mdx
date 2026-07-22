@@ -1,0 +1,95 @@
+---
+# ---- REQUIRED ----
+title: "Implementing JavaScript Array Methods From Scratch"
+description: "Hand-implementing JavaScript array core methods — forEach, map, filter, reduce — mounted on the prototype chain."
+pubDate: "Jun 09 2026"
+tags: ["JavaScript", "Array", "Implementation"]
+# ---- OPTIONAL ----
+published: true
+# hidden: false
+# shortDescription: ""
+# updatedDate: ""
+# heroImage: "/src/assets/posts/image.jpg"
+# hideHero: false
+# noImage: false
+# customOGImage: "/src/assets/posts/image.jpg"
+---
+
+## forEach
+
+Invokes a provided function once per array element.
+
+`arr.forEach(callback(element, index, array), thisArg)`
+
+```js
+Array.prototype.myForEach = function (callback, thisArg) {
+  for (let i = 0; i < this.length; i++) {
+    callback.call(thisArg, this[i], i, this);
+  }
+};
+```
+
+Straightforward traversal; key nuance is binding `thisArg` via `call()`.
+
+## map
+
+Returns a new array populated with the results of calling a provided function on every element.
+
+`arr.map(callback(element, index, array), thisArg)`
+
+```js
+Array.prototype.myMap = function (callback, thisArg) {
+  const result = new Array(this.length);
+  for (let i = 0; i < this.length; i++) {
+    result[i] = callback.call(thisArg, this[i], i, this);
+  }
+  return result;
+};
+```
+
+Pre-allocate the result array to the same length, then fill by mapping each element.
+
+## filter
+
+Returns a new array with all elements that pass the test implemented by the provided function.
+
+`arr.filter(callback(element, index, array), thisArg)`
+
+```js
+Array.prototype.myFilter = function (callback, thisArg) {
+  const result = [];
+  for (let i = 0; i < this.length; i++) {
+    if (callback.call(thisArg, this[i], i, this)) {
+      result.push(this[i]);
+    }
+  }
+  return result;
+};
+```
+
+Iterate and conditionally collect; only elements that satisfy the predicate are pushed.
+
+## reduce
+
+Executes a reducer function on each element, resulting in a single output value.
+
+`arr.reduce(callback(accumulator, currentValue, index, array), initialValue)`
+
+```js
+Array.prototype.myReduce = function (callback, initialValue) {
+  let acc, startIndex;
+  if (arguments.length >= 2) {
+    acc = initialValue;
+    startIndex = 0;
+  } else {
+    acc = this[0];
+    startIndex = 1;
+  }
+  for (let i = startIndex; i < this.length; i++) {
+    acc = callback(acc, this[i], i, this);
+  }
+  return acc;
+};
+```
+
+Accumulate via a reducer; `arguments.length` distinguishes "no initial value" from an explicit `undefined`.

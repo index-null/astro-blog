@@ -1,13 +1,20 @@
 ---
 import BaseHead from "../components/BaseHead.astro";
+import { getLangFromUrl } from "../i18n/utils";
+import { LOCALE_HTML_LANG } from "../i18n/config";
+
+const currentLang = getLangFromUrl(Astro.url);
+const htmlLang = LOCALE_HTML_LANG[currentLang];
+
 const { title, description, image } = Astro.props;
 ---
 
 <!doctype html>
-<html lang="en" class="h-full antialiased">
+<html lang={htmlLang} class="h-full antialiased">
   <head>
-    <BaseHead title={title} description={description} image={image} />
+    <BaseHead title={title} description={description} image={image} lang={currentLang} />
 
+    <!-- theme init (runs before paint) -->
     <script is:inline>
       let dark = false;
       if (localStorage.getItem("darkMode")) {
@@ -15,7 +22,6 @@ const { title, description, image } = Astro.props;
       } else {
         dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
       }
-
       var root = document.getElementsByTagName("html")[0];
       if (dark) {
         root.classList.add("dark");
@@ -77,12 +83,5 @@ const { title, description, image } = Astro.props;
         <slot />
       </div>
     </div>
-
-    <!-- <div class="fixed inset-0 h-full w-full -z-50">
-      <div
-        class="h-full w-full max-w-5xl mx-auto bg-base-50 ring-1 ring-base-200 dark:bg-base-900 dark:ring-base-300/20 shadow-lg"
-      >
-      </div>
-    </div> -->
   </body>
 </html>

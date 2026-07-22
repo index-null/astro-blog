@@ -1,6 +1,8 @@
 ---
 import { BASE, LICENSE, NAME, SOCIAL_LINKS } from "../config.ts";
+import { getLangFromUrl, getLocalizedPath } from "../i18n/utils";
 
+const lang = getLangFromUrl(Astro.url);
 const today = new Date();
 ---
 
@@ -187,7 +189,7 @@ const today = new Date();
         SOCIAL_LINKS.SHOW_RSS ? (
           <a
             target="_blank"
-            href={BASE + "/rss.xml"}
+            href={getLocalizedPath(lang, "/rss.xml")}
             class="text-base-600 hover:text-base-800 dark:text-base-400 dark:hover:text-base-200"
           >
             <span class="sr-only">RSS feed</span>

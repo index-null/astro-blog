@@ -17,15 +17,21 @@ const svgFiles = import.meta.glob("/src/**/*.svg", {
   import: "default",
 });
 
+const svgSource = src || href;
+
 let svgContent = "";
 
-if ((src || href).startsWith("<svg")) {
-  // If src is an SVG string
-  svgContent = src || href;
+if (!svgSource) {
+  console.error("Excalidraw: no src or href provided");
+  svgContent = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 20 200 50" width="100%" height="100%">
+    <text x="10" y="50" fill="red">No SVG source provided</text>
+  </svg>`;
+} else if (svgSource.startsWith("<svg")) {
+  svgContent = svgSource;
 } else {
-  let file = svgFiles[src || href];
+  let file = svgFiles[svgSource];
   if (!file) {
-    console.error(`SVG file not found: ${src || href}`);
+    console.error(`SVG file not found: ${svgSource}`);
     svgContent = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 20 120 50" width="100%" height="100%">
       <text x="10" y="50" fill="red">SVG not found</text>
     </svg>`;
@@ -34,8 +40,8 @@ if ((src || href).startsWith("<svg")) {
   }
 }
 
-// Function to modify the SVG using cheerio
-function modifySvg(svgString: string): string {
+// Only set responsive attributes — keep original Excalidraw colors intact
+function prepareSvg(svgString: string): string {
   const $ = load(svgString, { xmlMode: true });
 
   const svg = $("svg");
@@ -43,46 +49,23 @@ function modifySvg(svgString: string): string {
   svg.attr("height", "100%");
   svg.addClass("w-full h-auto");
 
-  $("text").each((_, el) => {
-    $(el).removeAttr("fill");
-    $(el).addClass("fill-skin-base");
-  });
-
-  $("rect").each((_, el) => {
-    $(el).removeAttr("fill");
-    $(el).addClass("fill-skin-soft");
-  });
-
-  $("path").each((_, el) => {
-    $(el).removeAttr("stroke");
-    $(el).addClass("stroke-skin-accent");
-    if ($(el).attr("fill") !== "none") {
-      $(el).addClass("fill-skin-soft");
-      $(el).removeAttr("fill");
-    }
-  });
-
-  $("g").each((_, el) => {
-    $(el).addClass("excalidraw-element");
-  });
-
   return $.html();
 }
 
-let modifiedSvg = "";
+let preparedSvg = "";
 
 try {
-  modifiedSvg = modifySvg(svgContent);
+  preparedSvg = prepareSvg(svgContent);
 } catch (error) {
   console.error("Error processing SVG:", error);
-  modifiedSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  preparedSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
     <text x="10" y="50" fill="red">Error loading SVG</text>
   </svg>`;
 }
 ---
 
 <figure class:list={["mx-auto max-w-full overflow-hidden my-8", className]}>
-  <div class="excalidraw-svg" aria-label={alt} set:html={modifiedSvg} />
+  <div class="excalidraw-svg" aria-label={alt} set:html={preparedSvg} />
   {
     caption && (
       <figcaption class="text-center mt-4 text-sm text-base-700 dark:text-base-300 italic">
@@ -99,16 +82,11 @@ try {
   :global(.excalidraw-svg svg) {
     @apply w-full h-auto;
   }
-  :global(.excalidraw-svg .fill-skin-base) {
-    @apply fill-base-800 dark:fill-base-100;
-  }
-  :global(.excalidraw-svg .fill-skin-soft) {
-    @apply fill-accent-600 dark:fill-accent-500;
-  }
-  :global(.excalidraw-svg .stroke-skin-accent) {
-    @apply stroke-accent-600 dark:stroke-accent-500;
-  }
-  :global(.excalidraw-svg .excalidraw-element) {
-    @apply transition-all duration-300;
+  /*
+    Dark mode: CSS invert filter — Excalidraw 官方推荐的暗色模式做法。
+    反转亮度 + 旋转色相，保留原始色彩关系和层次感，零 JS 成本。
+  */
+  :global(.dark .excalidraw-svg svg) {
+    filter: invert(1) hue-rotate(180deg);
   }
 </style>
