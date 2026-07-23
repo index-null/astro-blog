@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 400">
+  <defs>
+    <filter id="shadow" x="-5%" y="-5%" width="115%" height="115%">
+      <feDropShadow dx="0" dy="1" stdDeviation="3" flood-color="#00000012"/>
+    </filter>
+    <marker id="arrowR" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0,0 L10,5 L0,10" fill="#94A3B8"/>
+    </marker>
+  </defs>
+
+  <!-- ===== LEFT PANEL: Local / Git ===== -->
+  <rect x="15" y="20" width="355" height="362" rx="12" fill="#FFF1F2" stroke="#FECDD3" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="192" y="48" text-anchor="middle" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14px" font-weight="600" fill="#881337">Local / Git Repository</text>
+
+  <!-- schema.ts -->
+  <rect x="35" y="64" width="315" height="46" rx="8" fill="#FFF1F2" stroke="#FECDD3" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="192" y="88" text-anchor="middle" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="14px" font-weight="600" fill="#881337">src/db/schema.ts</text>
+  <text x="192" y="104" text-anchor="middle" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="12px" font-weight="400" fill="#BE123C">users · posts · comments</text>
+
+  <!-- Arrow: schema → drizzle/ -->
+  <line x1="192" y1="110" x2="192" y2="135" stroke="#94A3B8" stroke-width="1.8" marker-end="url(#arrowR)"/>
+  <text x="210" y="126" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="11px" font-weight="500" fill="#64748B">drizzle-kit generate</text>
+
+  <!-- drizzle/ -->
+  <rect x="35" y="142" width="315" height="202" rx="8" fill="#F0F9FF" stroke="#BAE6FD" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="192" y="167" text-anchor="middle" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="14px" font-weight="600" fill="#0C4A6E">drizzle/</text>
+
+  <!-- meta/ -->
+  <rect x="52" y="178" width="280" height="74" rx="6" fill="none" stroke="#CBD5E1" stroke-width="1" stroke-dasharray="4 3"/>
+  <text x="192" y="197" text-anchor="middle" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="12px" font-weight="600" fill="#0C4A6E">meta/</text>
+  <text x="68" y="218" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="11px" font-weight="500" fill="#0369A1">_journal.json</text>
+  <text x="68" y="236" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="11px" fill="#0369A1">0000_snapshot.json</text>
+  <text x="68" y="252" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="11px" fill="#0369A1">0001_snapshot.json</text>
+
+  <!-- SQL migration files -->
+  <text x="68" y="280" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="11px" fill="#0369A1">0000_fast_iron_lad.sql</text>
+  <text x="68" y="298" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="11px" fill="#0369A1">0001_eager_black_widow.sql</text>
+
+  <!-- Annotation -->
+  <text x="68" y="330" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="11px" font-weight="500" fill="#64748B">id → prevId chain guarantees snapshot integrity</text>
+
+  <!-- ===== CROSS ARROW: migrate ===== -->
+  <line x1="370" y1="225" x2="450" y2="225" stroke="#94A3B8" stroke-width="1.8" marker-end="url(#arrowR)"/>
+  <text x="410" y="218" text-anchor="middle" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="12px" font-weight="600" fill="#64748B">migrate</text>
+
+  <!-- ===== RIGHT PANEL: Database Server ===== -->
+  <rect x="470" y="20" width="335" height="362" rx="12" fill="#F0FDF4" stroke="#BBF7D0" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="637" y="48" text-anchor="middle" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14px" font-weight="600" fill="#14532D">Database Server</text>
+
+  <!-- __drizzle_migrations -->
+  <rect x="490" y="64" width="295" height="118" rx="8" fill="#F0FDF4" stroke="#BBF7D0" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="637" y="88" text-anchor="middle" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="14px" font-weight="600" fill="#14532D">__drizzle_migrations</text>
+
+  <!-- Column headers -->
+  <rect x="505" y="100" width="36" height="20" rx="3" fill="#F0FDF4" stroke="#BBF7D0" stroke-width="1"/>
+  <text x="523" y="114" text-anchor="middle" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="11px" font-weight="600" fill="#14532D">id</text>
+
+  <rect x="551" y="100" width="100" height="20" rx="3" fill="#F0FDF4" stroke="#BBF7D0" stroke-width="1"/>
+  <text x="601" y="114" text-anchor="middle" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="11px" font-weight="600" fill="#14532D">hash</text>
+
+  <rect x="661" y="100" width="110" height="20" rx="3" fill="#F0FDF4" stroke="#BBF7D0" stroke-width="1"/>
+  <text x="716" y="114" text-anchor="middle" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="11px" font-weight="600" fill="#14532D">created_at</text>
+
+  <!-- Data row 1 -->
+  <text x="523" y="145" text-anchor="middle" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="11px" fill="#15803D">1</text>
+  <text x="601" y="145" text-anchor="middle" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="11px" fill="#15803D">d4e5f6a7b8..</text>
+  <text x="716" y="145" text-anchor="middle" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="11px" fill="#15803D">1709553600000</text>
+
+  <!-- Data row 2 -->
+  <text x="523" y="167" text-anchor="middle" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="11px" fill="#15803D">2</text>
+  <text x="601" y="167" text-anchor="middle" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="11px" fill="#15803D">b3c4d5e6f7..</text>
+  <text x="716" y="167" text-anchor="middle" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="11px" fill="#15803D">1709640000000</text>
+
+  <!-- Business Tables -->
+  <rect x="490" y="200" width="295" height="66" rx="8" fill="#FAF5FF" stroke="#E9D5FF" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="637" y="224" text-anchor="middle" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14px" font-weight="600" fill="#4C1D95">Business Tables</text>
+
+  <rect x="505" y="238" width="78" height="22" rx="4" fill="#FAF5FF" stroke="#E9D5FF" stroke-width="1"/>
+  <text x="544" y="253" text-anchor="middle" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="11px" font-weight="500" fill="#4C1D95">users</text>
+
+  <rect x="595" y="238" width="78" height="22" rx="4" fill="#FAF5FF" stroke="#E9D5FF" stroke-width="1"/>
+  <text x="634" y="253" text-anchor="middle" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="11px" font-weight="500" fill="#4C1D95">posts</text>
+
+  <rect x="685" y="238" width="78" height="22" rx="4" fill="#FAF5FF" stroke="#E9D5FF" stroke-width="1"/>
+  <text x="724" y="253" text-anchor="middle" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="11px" font-weight="500" fill="#4C1D95">comments</text>
+
+  <!-- Core Diff -->
+  <rect x="490" y="284" width="295" height="48" rx="8" fill="#FFFBEB" stroke="#FDE68A" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="637" y="310" text-anchor="middle" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="13px" font-weight="600" fill="#78350F">_journal.when ↔ __drizzle_migrations.created_at</text>
+  <text x="637" y="326" text-anchor="middle" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="11px" font-weight="500" fill="#64748B">compare timestamps → find pending → execute DDL</text>
+</svg>

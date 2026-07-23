@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 740">
+  <defs>
+    <filter id="shadow" x="-5%" y="-5%" width="115%" height="115%">
+      <feDropShadow dx="0" dy="1" stdDeviation="3" flood-color="#00000012"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0,0 L10,5 L0,10" fill="#94A3B8"/>
+    </marker>
+  </defs>
+
+  <!-- Root: drizzle-kit generate (Rose) -->
+  <rect x="150" y="25" width="400" height="44" rx="8" fill="#FFF1F2" stroke="#FECDD3" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="350" y="52" text-anchor="middle" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="14px" font-weight="600" fill="#881337">drizzle-kit generate</text>
+
+  <!-- Arrow -->
+  <line x1="350" y1="69" x2="350" y2="96" stroke="#94A3B8" stroke-width="1.8" marker-end="url(#arrow)"/>
+
+  <!-- Step 1: Read schema.ts (Sky) -->
+  <rect x="100" y="103" width="500" height="48" rx="8" fill="#F0F9FF" stroke="#BAE6FD" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="350" y="124" text-anchor="middle" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14px" font-weight="600" fill="#0C4A6E">1. Read schema.ts</text>
+  <text x="350" y="141" text-anchor="middle" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="12px" font-weight="400" fill="#0369A1">Generate current JSON snapshot</text>
+
+  <!-- Arrow -->
+  <line x1="350" y1="151" x2="350" y2="178" stroke="#94A3B8" stroke-width="1.8" marker-end="url(#arrow)"/>
+
+  <!-- Step 2: Read latest snapshot (Sky) -->
+  <rect x="100" y="185" width="500" height="48" rx="8" fill="#F0F9FF" stroke="#BAE6FD" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="350" y="206" text-anchor="middle" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14px" font-weight="600" fill="#0C4A6E">2. Read latest snapshot</text>
+  <text x="350" y="223" text-anchor="middle" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="12px" font-weight="400" fill="#0369A1">Read latest snapshot from meta/</text>
+
+  <!-- Arrow -->
+  <line x1="350" y1="233" x2="350" y2="260" stroke="#94A3B8" stroke-width="1.8" marker-end="url(#arrow)"/>
+
+  <!-- Step 3: Diff header (Green) -->
+  <rect x="100" y="267" width="500" height="44" rx="8" fill="#F0FDF4" stroke="#BBF7D0" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="350" y="293" text-anchor="middle" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14px" font-weight="600" fill="#14532D">3. diff(current, latest) → compute DDL changes</text>
+
+  <!-- Dashed connector -->
+  <line x1="350" y1="311" x2="350" y2="326" stroke="#94A3B8" stroke-width="1" stroke-dasharray="4 3"/>
+
+  <!-- Step 3 Sub-items (Cyan) -->
+  <rect x="120" y="328" width="460" height="148" rx="8" fill="#ECFEFF" stroke="#A5F3FC" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="140" y="349" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="12px" font-weight="400" fill="#164E63">+ Table added    → CREATE TABLE</text>
+  <text x="140" y="370" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="12px" font-weight="400" fill="#164E63">− Table dropped  → DROP TABLE</text>
+  <text x="140" y="391" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="12px" font-weight="400" fill="#164E63">+ Column added   → ALTER TABLE ADD COLUMN</text>
+  <text x="140" y="412" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="12px" font-weight="400" fill="#164E63">− Column dropped → ALTER TABLE DROP COLUMN</text>
+  <text x="140" y="433" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="12px" font-weight="400" fill="#164E63">~ Type changed   → ALTER TABLE ALTER COLUMN TYPE</text>
+  <text x="140" y="454" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="12px" font-weight="400" fill="#164E63">? Rename detected → interactive confirmation</text>
+
+  <!-- Arrow -->
+  <line x1="350" y1="476" x2="350" y2="505" stroke="#94A3B8" stroke-width="1.8" marker-end="url(#arrow)"/>
+
+  <!-- Step 4: Generate SQL (Green) -->
+  <rect x="150" y="512" width="400" height="44" rx="8" fill="#F0FDF4" stroke="#BBF7D0" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="350" y="538" text-anchor="middle" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14px" font-weight="600" fill="#14532D">4. Generate XXXX_tag.sql</text>
+
+  <!-- Arrow -->
+  <line x1="350" y1="556" x2="350" y2="583" stroke="#94A3B8" stroke-width="1.8" marker-end="url(#arrow)"/>
+
+  <!-- Step 5: Save snapshot (Purple) -->
+  <rect x="100" y="590" width="500" height="48" rx="8" fill="#FAF5FF" stroke="#E9D5FF" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="350" y="611" text-anchor="middle" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14px" font-weight="600" fill="#4C1D95">5. Save latest snapshot</text>
+  <text x="350" y="629" text-anchor="middle" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="12px" font-weight="400" fill="#7E22CE">meta/000N_snapshot.json</text>
+
+  <!-- Arrow -->
+  <line x1="350" y1="638" x2="350" y2="665" stroke="#94A3B8" stroke-width="1.8" marker-end="url(#arrow)"/>
+
+  <!-- Step 6: Update journal (Purple) -->
+  <rect x="120" y="672" width="460" height="44" rx="8" fill="#FAF5FF" stroke="#E9D5FF" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="350" y="698" text-anchor="middle" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14px" font-weight="600" fill="#4C1D95">6. Update _journal.json entries</text>
+</svg>

@@ -1,0 +1,391 @@
+---
+# ---- REQUIRED ----
+title: "Drizzle Kit —— Typescript生态轻量数据库版本管理方案"
+description: "数据库迁移最怕线上炸了回不去。Drizzle Kit 生成迁移时不连库，只靠本地 JSON 快照做对比，这让迁移 SQL 变得确定性、可审查。本文从 push 到 generate，完整拆解 meta/ 快照和 __drizzle_migrations 的底层设计。"
+pubDate: "Jul 23 2026"
+tags:
+  [
+    "drizzle",
+    "drizzle-kit",
+    "orm",
+    "typescript",
+    "database",
+    "migrations",
+    "postgresql",
+  ]
+lang: "zh-cn"
+
+# ---- OPTIONAL ----
+published: true
+# hidden: false
+# shortDescription: ""
+# updatedDate: ""
+# heroImage: "/src/assets/posts/image.jpg"
+# hideHero: false
+# noImage: false
+# customOGImage: "/src/assets/posts/image.jpg"
+---
+
+最近使用Hono做全栈开发，接触到Drizzle来做数据库相关的管理，体验很不错，这里简单记录分享。
+
+[Drizzle ORM](https://orm.drizzle.team) 的 CLI 工具 Drizzle Kit **生成迁移时不连数据库，只靠本地 JSON 快照做对比。** 同一份 schema 永远生成同样的 SQL，可以提交 Git、做 Code Review，不会因为连接不同环境或者DDL而产生差异。
+
+本文先把核心用法过一遍，再讲解它底层的版本管理设计。
+
+## Schema 定义 —— 表结构就是 TypeScript
+
+Drizzle 没有 `.prisma` 那种独立的 schema 语言，直接用 TypeScript 写表：
+
+```ts
+// src/db/schema.ts
+import {
+  pgTable,
+  serial,
+  text,
+  varchar,
+  integer,
+  timestamp,
+} from "drizzle-orm/pg-core";
+
+export const users = pgTable("users", {
+  id: serial("id").primaryKey(), // [!code highlight]
+  email: varchar("email", { length: 255 }).notNull().unique(),
+  name: text("name").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+```
+
+安装和配置也干净：
+
+```bash
+bun add drizzle-orm pg # 核心库+数据库驱动
+bun add -D drizzle-kit tsx @types/pg # 开发依赖
+```
+
+```ts
+// drizzle.config.ts
+import { defineConfig } from "drizzle-kit";
+
+export default defineConfig({
+  dialect: "postgresql",
+  schema: "./src/db/schema.ts",
+  out: "./drizzle",
+  dbCredentials: {
+    url: process.env.DATABASE_URL!,
+  },
+});
+```
+
+`dialect` 指定数据库（也支持 MySQL、SQLite、Turso 等），`schema` 指向表定义，`out` 是迁移输出目录。
+
+数据库连接：
+
+```ts
+// src/db/index.ts
+import { drizzle } from "drizzle-orm/node-postgres";
+import { Pool } from "pg";
+import * as schema from "./schema";
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL! });
+export const db = drizzle(pool, { schema });
+```
+
+> 本文以 PostgreSQL 为例，其他数据库用法一致。
+
+## push 还是 generate？
+
+Drizzle Kit 提供两种同步 schema 到数据库的方式：
+
+### push：改完直接生效
+
+```bash
+bunx drizzle-kit push
+```
+
+它做的事：读 schema → 序列化为快照 → 连数据库 introspect → 算差异 → 直接执行 DDL。快速原型、单人项目、配合 Serverless 数据库（Neon、Turso）蓝绿部署，非常直接。
+
+**但它不生成 SQL 文件。** 没文件就没法 Code Review，CI/CD 也不好精确控制。团队协作或生产环境看下面这套。
+
+### generate + migrate：先生成 SQL，再执行
+
+生产级两步走。
+
+**Step 1：生成迁移文件**
+
+```bash
+bunx drizzle-kit generate
+```
+
+第一次跑完，`drizzle/` 目录长这样：
+
+```
+drizzle/
+├── meta/
+│   ├── _journal.json
+│   └── 0000_snapshot.json
+└── 0000_fast_iron_lad.sql
+```
+
+现在给 `posts` 加个字段：
+
+```ts
+published: boolean("published").default(false),
+```
+
+再跑一次：
+
+```
+drizzle/
+├── meta/
+│   ├── _journal.json
+│   ├── 0000_snapshot.json
+│   └── 0001_snapshot.json
+├── 0000_fast_iron_lad.sql
+└── 0001_eager_black_widow.sql  # 新增
+```
+
+文件内容如下：
+
+```sql
+ALTER TABLE "posts" ADD COLUMN "published" boolean DEFAULT false;
+```
+
+**重命名列时有个细节：** 如果你把 `name` 改成 `fullName`，Drizzle 没法自动判断这是 rename 还是 drop + add，会交互式问你：
+
+```
+Is fullName column in users table created or renamed from another column?
+
+❯ ~ name › fullName  rename column
+  + fullName          create column
+```
+
+**Step 2：应用迁移**
+
+```bash
+bunx drizzle-kit migrate
+```
+
+它连数据库 → 查 `__drizzle_migrations` 表 → 找出还没跑的迁移`sql` → 按顺序执行。同一迁移不会跑两次。
+
+### 数据库迁移
+
+到这里 SQL 文件已经有了。接下来要解决的是：**生产和开发如何使用这些迁移文件来同步数据库**
+
+社区共识是：**本地随意 push，线上自动 migrate，再让工具帮你确保永远不会漏掉迁移文件。**
+
+1. #### 自动生成迁移`sql`
+
+别靠死记"上线前记得 generate"的规范。推荐加一个 pre-commit hook，只要 staging 区里 `schema.ts` 有变动就自动跑一遍：
+
+```yml
+# lefthook.yml
+pre-commit:
+  commands:
+    drizzle-generate:
+      glob: "*.{ts,tsx}"
+      run: |
+        if git diff --cached --name-only | grep -q "schema\.ts"; then
+          bunx drizzle-kit generate
+          git add drizzle/
+        fi
+```
+
+Husky 同理，把核心逻辑搬到 `.husky/pre-commit` 里即可。
+
+这样每次 commit 的 `.sql` 一定和最新 schema 同步。
+
+2. #### 启动前自动执行迁移
+
+本地开发数据丢了无所谓，`bunx drizzle-kit push` 直接生效，不产生文件、不打断思路。
+
+但生产环境必须走 `migrate()` —— 应用启动前自动执行，推荐按 `NODE_ENV` 判断要不要跑：
+
+```ts
+// src/server.ts
+import { migrate } from "drizzle-orm/node-postgres/migrator";
+
+if (process.env.NODE_ENV === "production") {
+  await migrate(db, { migrationsFolder: "./drizzle" });
+}
+// 迁移跑完才启动 server
+```
+
+### 如果你需要在迁移里改数据
+
+Drizzle Kit 生成的 SQL 是纯 DDL（建表、改列、加索引），不管数据。真要迁移数据（比如把 `name` 拆成 `first_name` + `last_name`），直接在生成的 `.sql` 文件后面补 DML 就行：
+
+```sql
+ALTER TABLE "users" ADD COLUMN "first_name" text;
+ALTER TABLE "users" ADD COLUMN "last_name" text;
+
+-- 手动补充：数据迁移
+UPDATE "users" SET
+  "first_name" = split_part("name", ' ', 1),
+  "last_name" = split_part("name", ' ', 2);
+```
+
+## seed 和 studio —— 开发体验提升必备
+
+### seed：填充测试数据
+
+`drizzle-seed` 是官方提供的种子数据工具，装包即用：
+
+```bash
+bun add drizzle-seed
+```
+
+相比手写 SQL 脚本或第三方造数库，`drizzle-seed` 最大优势是与你的 Drizzle schema **共享类型定义**：schema 一改，seed 编译报错，不会出现"改了表结构忘了更新造数脚本"的低级错误。
+
+### studio：小而美的数据库 Web UI
+
+```bash
+bunx drizzle-kit studio
+```
+
+跑起来后在 `https://local.drizzle.studio` 打开一个网页：浏览表、查数据、编辑记录、看外键关联。日常调试够用， 不需要额外`DBMS`。
+
+### 完整工作流
+
+::excalidraw[/src/assets/posts/drizzle-kit-workflow.svg]
+
+---
+
+## 原理简述：它为什么可靠？
+
+**`generate` 不连数据库，凭什么知道要生成什么 SQL？** 我们现在深入看看之前提到的：`meta/` 目录、snapshot 快照、`__drizzle_migrations` 表。
+
+### meta/ 目录
+
+每次 `generate`，Drizzle会在本地存一份完整 schema 历史：
+
+```
+drizzle/
+├── meta/
+│   ├── _journal.json          # 迁移目录清单
+│   ├── 0000_snapshot.json     # 初始 schema 快照
+│   └── 0001_snapshot.json     # 第一次变更后的 schema 快照
+├── 0000_fast_iron_lad.sql
+└── 0001_eager_black_widow.sql
+```
+
+`_journal.json` 就是目录：
+
+```json
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1709553600000,
+      "tag": "0000_fast_iron_lad",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1709640000000,
+      "tag": "0001_eager_black_widow",
+      "breakpoints": true
+    }
+  ]
+}
+```
+
+`entries` 按时间列出所有迁移，`tag` 对应文件名前缀。`XXXX_snapshot.json` 才是核心 —— 它是当前 schema 的完整序列化：
+
+```json
+// XXXX_snapshot.json
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "id": "a1b2c3d4-e5f6-4a5b-8c9d-0e1f2a3b4c5d",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "tables": {
+    "users": {
+      "name": "users",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {}
+    }
+  },
+  "enums": {},
+  "schemas": {}
+}
+```
+
+注意两个关键字段：
+
+- `id`：当前快照的唯一标识
+- `prevId`：指向上一个快照的 `id`
+
+**`id` → `prevId` 构成一条单向链表。** 每个快照都知道"我是从哪个状态变过来的"。
+
+### generate行为示意图
+
+::excalidraw[/src/assets/posts/drizzle-kit-generate-flow.svg]
+
+总结一下看就四步：
+
+1. 读取当前 TypeScript schema，序列化为新的 snapshot JSON
+2. 从 `_journal.json` 找到最后一条记录，加载对应的上一个 snapshot
+3. **对比两个 snapshot**，算出差异（加了哪些列、删了哪些表、改了哪些索引...）
+4. 把差异翻译成目标数据库的 DDL SQL，写入 `.sql` 文件
+
+全程是不碰数据库的。
+
+这意味着：离线也能生成迁移（CI/CD 不需要数据库）；同一份 schema 永远生成同样的 SQL；`prevId` 链表保证快照链完整 —— 中间少一个 snapshot，下次 generate 直接报错。
+
+### `__drizzle_migrations` —— 生产数据库里的执行日志
+
+`generate` 确保了"生成稳定正确的迁移SQL"，`migrate` 则负责跟踪"哪些 SQL 还没跑"，这样无论哪个版本的数据库都可以丝滑迁移到最新。后者靠数据库里的一张表：
+
+```sql
+-- PostgreSQL 下默认在 drizzle schema，源码中的建表语句
+TABLE drizzle.__drizzle_migrations (
+  id          serial PRIMARY KEY,
+  hash        text NOT NULL,
+  created_at  bigint
+);
+```
+
+| 字段         | 干嘛的                                               |
+| ------------ | ---------------------------------------------------- |
+| `hash`       | 迁移文件的 SHA256，保证文件没被篡改                  |
+| `created_at` | 对应 `_journal.json` 中该迁移的 `when`（毫秒时间戳） |
+
+**有趣的是**：表里并**没有** `name` 字段。迁移文件名（`0000_fast_iron_lad`）只存在于 `_journal.json` 的 `tag` 字段中。Drizzle 通过 `created_at` 时间戳而非文件名来判断哪些迁移已执行。
+
+所以在 [GitHub Discussion](https://github.com/drizzle-team/drizzle-orm/discussions/1696) 里有老哥吐槽为什么 Drizzle 不直接存迁移文件名而是存的hash导致debug不便！
+
+`migrate` 的执行逻辑是：读 `_journal.json` → 查 `__drizzle_migrations` 拿到最大的 `created_at` → 遍历所有 migration，`folderMillis > 已记录的最大 created_at` 的就是待执行列表 → 按 `_journal.json` 中 entries 顺序逐个跑 → 每跑完一个插一条 `(hash, created_at)` 记录。
+
+补充一个关于迁移事务的参考信息：PostgreSQL 下，**所有**待执行的迁移文件被包在**同一个事务**里，这在操作 enum 等场景下会带来麻烦，[GitHub Issue #3249](https://github.com/drizzle-team/drizzle-orm/issues/3249) 专门讨论了这个问题。而MySQL / SQLite / SingleStore 不支持 DDL 事务，因此依赖 `--> statement-breakpoint` 分隔符逐条执行，每条 DDL 隐式自动提交。
+
+### 完整架构一览
+
+::excalidraw[/src/assets/posts/drizzle-kit-architecture.svg]
+
+## 总结
+
+**本地 `snapshot.json` 快照追踪每次 schema 变更 → `generate` 对比新旧快照生成 SQL → `migrate` 查 `__drizzle_migrations` 表执行未跑的文件。** 全程离线稳定、可审查记录。

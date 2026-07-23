@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 560">
+  <defs>
+    <filter id="shadow" x="-5%" y="-5%" width="115%" height="115%">
+      <feDropShadow dx="0" dy="1" stdDeviation="3" flood-color="#00000012"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="10" markerHeight="10" orient="auto">
+      <path d="M0,0 L10,5 L0,10" fill="#94A3B8"/>
+    </marker>
+  </defs>
+
+  <!-- Stage 1: Local Development (Rose) -->
+  <rect x="70" y="25" width="560" height="54" rx="8" fill="#FFF1F2" stroke="#FECDD3" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="350" y="48" text-anchor="middle" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14px" font-weight="600" fill="#881337">Local Development</text>
+  <text x="350" y="67" text-anchor="middle" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="12px" font-weight="400" fill="#BE123C">schema.ts → drizzle-kit push (instant feedback)</text>
+
+  <!-- Arrow 1→2 -->
+  <line x1="350" y1="79" x2="350" y2="118" stroke="#94A3B8" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <text x="374" y="101" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="11px" font-weight="500" fill="#64748B">rapid iteration</text>
+
+  <!-- Stage 2: Pre-commit (Sky) -->
+  <rect x="70" y="130" width="560" height="54" rx="8" fill="#F0F9FF" stroke="#BAE6FD" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="350" y="153" text-anchor="middle" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14px" font-weight="600" fill="#0C4A6E">Pre-commit</text>
+  <text x="350" y="172" text-anchor="middle" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="12px" font-weight="400" fill="#0369A1">schema.ts → drizzle-kit generate → review SQL files</text>
+
+  <!-- Arrow 2→3 -->
+  <line x1="350" y1="184" x2="350" y2="223" stroke="#94A3B8" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <text x="374" y="206" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="11px" font-weight="500" fill="#64748B">generate migration</text>
+
+  <!-- Stage 3: Deployment (Green) -->
+  <rect x="70" y="235" width="560" height="54" rx="8" fill="#F0FDF4" stroke="#BBF7D0" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="350" y="258" text-anchor="middle" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14px" font-weight="600" fill="#14532D">Deployment</text>
+  <text x="350" y="277" text-anchor="middle" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="12px" font-weight="400" fill="#15803D">startup script → migrate() → auto-apply migrations</text>
+
+  <!-- Arrow 3→4 -->
+  <line x1="350" y1="289" x2="350" y2="328" stroke="#94A3B8" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <text x="374" y="311" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="11px" font-weight="500" fill="#64748B">production rollout</text>
+
+  <!-- Stage 4: Debugging (Purple) -->
+  <rect x="70" y="340" width="560" height="54" rx="8" fill="#FAF5FF" stroke="#E9D5FF" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="350" y="363" text-anchor="middle" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14px" font-weight="600" fill="#4C1D95">Debugging</text>
+  <text x="350" y="382" text-anchor="middle" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="12px" font-weight="400" fill="#7E22CE">drizzle-kit studio → visual browse / edit data</text>
+
+  <!-- Arrow 4→5 -->
+  <line x1="350" y1="394" x2="350" y2="433" stroke="#94A3B8" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <text x="374" y="416" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="11px" font-weight="500" fill="#64748B">dev loop</text>
+
+  <!-- Stage 5: Reset (Amber) -->
+  <rect x="70" y="445" width="560" height="54" rx="8" fill="#FFFBEB" stroke="#FDE68A" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="350" y="468" text-anchor="middle" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14px" font-weight="600" fill="#78350F">Reset</text>
+  <text x="350" y="487" text-anchor="middle" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="12px" font-weight="400" fill="#B45309">bun run seed.ts → truncate and refill test data</text>
+
+</svg>

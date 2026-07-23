@@ -1,0 +1,389 @@
+---
+# ---- REQUIRED ----
+title: "Drizzle Kit — A Lightweight Database Versioning Toolkit for the TypeScript Ecosystem"
+description: "The worst part of database migrations is not being able to roll back after a production incident. Drizzle Kit generates migrations without connecting to a database — it diffs against local JSON snapshots instead. This makes migration SQL deterministic and reviewable. From push to generate, this article walks through the internals of meta/ snapshots and the __drizzle_migrations table."
+pubDate: "Jul 23 2026"
+tags:
+  [
+    "drizzle",
+    "drizzle-kit",
+    "orm",
+    "typescript",
+    "database",
+    "migrations",
+    "postgresql",
+  ]
+lang: "en"
+
+# ---- OPTIONAL ----
+published: true
+# hidden: false
+# shortDescription: ""
+# updatedDate: ""
+# heroImage: "/src/assets/posts/image.jpg"
+# hideHero: false
+# noImage: false
+# customOGImage: "/src/assets/posts/image.jpg"
+---
+
+I've been doing full-stack development with Hono lately and picked up Drizzle for database management. The experience has been refreshing — here are my notes.
+
+[Drizzle ORM](https://orm.drizzle.team)'s CLI tool, Drizzle Kit, **generates migrations without ever connecting to a database. It diffs exclusively against local JSON snapshots.** The same schema always produces the same SQL — you can commit it to Git, run it through Code Review, and never worry about drift between environments or DDL discrepancies.
+
+This article covers the core workflow first, then dives into how its versioning internals actually work.
+
+## Schema Definition — Your Tables Are Just TypeScript
+
+Drizzle doesn't use a standalone schema language like `.prisma`. You define tables directly in TypeScript:
+
+```ts
+// src/db/schema.ts
+import {
+  pgTable,
+  serial,
+  text,
+  varchar,
+  integer,
+  timestamp,
+} from "drizzle-orm/pg-core";
+
+export const users = pgTable("users", {
+  id: serial("id").primaryKey(), // [!code highlight]
+  email: varchar("email", { length: 255 }).notNull().unique(),
+  name: text("name").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+```
+
+Setup is equally clean:
+
+```bash
+bun add drizzle-orm pg         # core + database driver
+bun add -D drizzle-kit tsx @types/pg  # dev dependencies
+```
+
+```ts
+// drizzle.config.ts
+import { defineConfig } from "drizzle-kit";
+
+export default defineConfig({
+  dialect: "postgresql",
+  schema: "./src/db/schema.ts",
+  out: "./drizzle",
+  dbCredentials: {
+    url: process.env.DATABASE_URL!,
+  },
+});
+```
+
+`dialect` specifies your database (MySQL, SQLite, Turso, etc. are also supported), `schema` points to your table definitions, and `out` is the migration output directory.
+
+Database connection:
+
+```ts
+// src/db/index.ts
+import { drizzle } from "drizzle-orm/node-postgres";
+import { Pool } from "pg";
+import * as schema from "./schema";
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL! });
+export const db = drizzle(pool, { schema });
+```
+
+> This article uses PostgreSQL for examples. The API is the same across other dialects.
+
+## Push or Generate?
+
+Drizzle Kit offers two approaches to sync your schema with the database:
+
+### push: Apply Changes Instantly
+
+```bash
+bunx drizzle-kit push
+```
+
+What it does: reads schema → serializes to a snapshot → introspects the database → computes the diff → executes DDL directly. Great for rapid prototyping, solo projects, and blue-green deployments with serverless databases (Neon, Turso). Dead simple.
+
+**But it doesn't produce SQL files.** No files means no Code Review, and CI/CD loses precise control. For team collaboration or production, the next approach is what you want.
+
+### generate + migrate: Generate SQL First, Then Execute
+
+A production-grade two-step workflow.
+
+**Step 1: Generate migration files**
+
+```bash
+bunx drizzle-kit generate
+```
+
+After the first run, your `drizzle/` directory looks like this:
+
+```
+drizzle/
+├── meta/
+│   ├── _journal.json
+│   └── 0000_snapshot.json
+└── 0000_fast_iron_lad.sql
+```
+
+Now add a column to `posts`:
+
+```ts
+published: boolean("published").default(false),
+```
+
+Run generate again:
+
+```
+drizzle/
+├── meta/
+│   ├── _journal.json
+│   ├── 0000_snapshot.json
+│   └── 0001_snapshot.json
+├── 0000_fast_iron_lad.sql
+└── 0001_eager_black_widow.sql  # new
+```
+
+The generated SQL:
+
+```sql
+ALTER TABLE "posts" ADD COLUMN "published" boolean DEFAULT false;
+```
+
+**A detail worth noting when renaming columns:** If you rename `name` to `fullName`, Drizzle can't automatically tell whether this is a rename or a drop + add. It prompts you interactively:
+
+```
+Is fullName column in users table created or renamed from another column?
+
+❯ ~ name › fullName  rename column
+  + fullName          create column
+```
+
+**Step 2: Apply migrations**
+
+```bash
+bunx drizzle-kit migrate
+```
+
+It connects to the database → queries the `__drizzle_migrations` table → finds unexecuted migration SQL → runs them in order. A migration never runs twice.
+
+### Managing Migrations in Practice
+
+Now that you have SQL files, the real question is: **how should production and development environments consume these migration files?**
+
+The community consensus: **push freely in development, auto-migrate in production, and let tooling guarantee you never miss a migration file.**
+
+1. #### Auto-generate migration SQL
+
+Don't rely on remembering to run `generate` before deploying. Add a pre-commit hook that auto-runs it whenever `schema.ts` changes in the staging area:
+
+```yml
+# lefthook.yml
+pre-commit:
+  commands:
+    drizzle-generate:
+      glob: "*.{ts,tsx}"
+      run: |
+        if git diff --cached --name-only | grep -q "schema\.ts"; then
+          bunx drizzle-kit generate
+          git add drizzle/
+        fi
+```
+
+For Husky, just port the core logic into `.husky/pre-commit`. This guarantees every commit's `.sql` is always in sync with the latest schema.
+
+2. #### Auto-run migrations before app startup
+
+Losing dev data doesn't matter — `bunx drizzle-kit push` applies changes instantly without generating files or breaking your flow.
+
+But production must use `migrate()` — run it automatically before the app starts. Gate it on `NODE_ENV`:
+
+```ts
+// src/server.ts
+import { migrate } from "drizzle-orm/node-postgres/migrator";
+
+if (process.env.NODE_ENV === "production") {
+  await migrate(db, { migrationsFolder: "./drizzle" });
+}
+// Server starts only after migrations complete
+```
+
+### When You Need to Transform Data in a Migration
+
+Drizzle Kit generates pure DDL (create tables, alter columns, add indexes). It doesn't touch data. When you genuinely need data migration — say, splitting `name` into `first_name` + `last_name` — just append your DML to the generated `.sql` file:
+
+```sql
+ALTER TABLE "users" ADD COLUMN "first_name" text;
+ALTER TABLE "users" ADD COLUMN "last_name" text;
+
+-- Manual: data migration
+UPDATE "users" SET
+  "first_name" = split_part("name", ' ', 1),
+  "last_name" = split_part("name", ' ', 2);
+```
+
+## Seed & Studio — Essential DX Upgrades
+
+### seed: Populate Test Data
+
+`drizzle-seed` is the official seeding utility. Install and go:
+
+```bash
+bun add drizzle-seed
+```
+
+Compared to hand-written SQL scripts or third-party data generators, `drizzle-seed`'s biggest advantage is that it **shares type definitions** with your Drizzle schema. Change the schema, and your seed file fails at compile time — no more "updated the table but forgot to update the seed script" footguns.
+
+### studio: A Small, Polished Database Web UI
+
+```bash
+bunx drizzle-kit studio
+```
+
+Once running, open `https://local.drizzle.studio` in your browser: browse tables, inspect data, edit records, check foreign key relationships. Enough for day-to-day debugging — no separate DBMS needed.
+
+### The Full Workflow
+
+::excalidraw[/src/assets/posts/drizzle-kit-workflow.svg]
+
+---
+
+## Under the Hood: Why Is It Reliable?
+
+**`generate` never touches a database — how does it know what SQL to produce?** Let's dig into what we glossed over earlier: the `meta/` directory, snapshot files, and the `__drizzle_migrations` table.
+
+### The meta/ Directory
+
+Every `generate` run saves a complete schema history locally:
+
+```
+drizzle/
+├── meta/
+│   ├── _journal.json          # migration manifest
+│   ├── 0000_snapshot.json     # initial schema snapshot
+│   └── 0001_snapshot.json     # schema after the first change
+├── 0000_fast_iron_lad.sql
+└── 0001_eager_black_widow.sql
+```
+
+`_journal.json` is the table of contents:
+
+```json
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1709553600000,
+      "tag": "0000_fast_iron_lad",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1709640000000,
+      "tag": "0001_eager_black_widow",
+      "breakpoints": true
+    }
+  ]
+}
+```
+
+`entries` lists every migration chronologically; `tag` matches the filename prefix. But `XXXX_snapshot.json` is where the real action is — it's the complete serialization of your schema at that point in time:
+
+```json
+// XXXX_snapshot.json
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "id": "a1b2c3d4-e5f6-4a5b-8c9d-0e1f2a3b4c5d",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "tables": {
+    "users": {
+      "name": "users",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {}
+    }
+  },
+  "enums": {},
+  "schemas": {}
+}
+```
+
+Pay attention to two critical fields:
+
+- `id`: the unique identifier of this snapshot
+- `prevId`: points to the previous snapshot's `id`
+
+**`id` → `prevId` forms a singly linked list.** Each snapshot knows exactly which state it evolved from.
+
+### The generate Flow, Visualized
+
+::excalidraw[/src/assets/posts/drizzle-kit-generate-flow.svg]
+
+To summarize, it's a four-step process:
+
+1. Read the current TypeScript schema, serialize it as a new snapshot JSON
+2. Find the last entry in `_journal.json`, load the corresponding previous snapshot
+3. **Diff the two snapshots**, compute what changed (columns added, tables dropped, indexes modified...)
+4. Translate the diff into target-dialect DDL SQL and write the `.sql` file
+
+The database is never touched at any point.
+
+What this means: migrations can be generated offline (CI/CD doesn't need a database connection); the same schema always yields the same SQL; the `prevId` chain guarantees snapshot integrity — lose one snapshot in the middle and the next `generate` will error out immediately.
+
+### `__drizzle_migrations` — The Execution Ledger in Production
+
+`generate` ensures "stable, correct migration SQL." `migrate` tracks "which SQL hasn't been executed yet" — so any version of a database can be smoothly brought up to date. The latter relies on a single table inside the database:
+
+```sql
+-- PostgreSQL: defaults to the drizzle schema; this is the DDL from source
+TABLE drizzle.__drizzle_migrations (
+  id          serial PRIMARY KEY,
+  hash        text NOT NULL,
+  created_at  bigint
+);
+```
+
+| Column       | Purpose                                                                      |
+| ------------ | ---------------------------------------------------------------------------- |
+| `hash`       | SHA256 of the migration file — guarantees the file hasn't been tampered with |
+| `created_at` | Corresponds to the `when` field in `_journal.json` (millisecond timestamp)   |
+
+**An interesting detail:** there is **no** `name` column. Migration filenames (`0000_fast_iron_lad`) exist only in `_journal.json`'s `tag` field. Drizzle determines which migrations have been executed by `created_at` timestamps, not filenames.
+
+This is exactly why a [GitHub Discussion](https://github.com/drizzle-team/drizzle-orm/discussions/1696) thread had folks complaining that Drizzle stores hashes instead of migration filenames, making debugging unnecessarily painful.
+
+Here's the `migrate` execution logic: read `_journal.json` → query `__drizzle_migrations` for the largest `created_at` → iterate all migrations; any where `folderMillis > the largest recorded created_at` goes onto the pending list → execute them in `_journal.json` entry order → after each one completes, insert a `(hash, created_at)` record.
+
+One more note on transaction behavior: under PostgreSQL, **all** pending migration files are wrapped in a **single transaction**. This causes trouble with operations like enum alterations — [GitHub Issue #3249](https://github.com/drizzle-team/drizzle-orm/issues/3249) discusses this in detail. MySQL / SQLite / SingleStore don't support DDL transactions, so they rely on the `--> statement-breakpoint` separator to execute statements one by one, each implicitly auto-committed.
+
+### Architecture Overview
+
+::excalidraw[/src/assets/posts/drizzle-kit-architecture.svg]
+
+## Summary
+
+**Local JSON snapshots track every schema change → `generate` diffs old and new snapshots to produce SQL → `migrate` queries `__drizzle_migrations` to execute unapplied files.** Entirely offline, deterministic, and reviewable.
